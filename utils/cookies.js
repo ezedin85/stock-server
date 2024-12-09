@@ -1,12 +1,11 @@
 const { oneDayFromNow, fiveMinutesFromNow } = require("./date");
 
 const REFRESH_PATH = "/auth/refresh";
-const secure = process.env.NODE_ENV !== "development";
 
 const defaults = {
   sameSite: "strict",
   httpOnly: true, // will not be exposed to JavaScript running on the client side [eg. document.cookie].
-  secure, // in production https is required
+  secure: process.env.NODE_ENV !== "development", // in production https is required
 };
 
 const getAccessTokenCookieOptions = () => ({

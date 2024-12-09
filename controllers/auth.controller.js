@@ -19,19 +19,22 @@ const mongoose = require("mongoose");
 const loginHandler = catchErrors(async (req, res) => {
   // validate request
   const { phone, password } = req.body;
+  
   const userAgent = req.headers["user-agent"];
 
   // call service
-  const { accessToken, refreshToken } = await loginUser({
+  const { user, accessToken, refreshToken } = await loginUser({
     phone,
     password,
     userAgent,
   });
+  
+  const currentLocation = user.locations?.find((loc) => loc.isCurrent)?.location?._id;
 
   // return response
   return setAuthCookies({ res, accessToken, refreshToken })
     .status(HTTP_STATUS.OK)
-    .json({ message: "Login Successful" });
+    .json({ message: "Login Successful", currentLocation });
 });
 
 const refreshHandler = catchErrors(async (req, res) => {

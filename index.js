@@ -1,3 +1,4 @@
+const path = require("path")
 const express = require("express");
 const cors = require("cors");
 const connectToDatabase = require("./config/db");
@@ -12,6 +13,11 @@ const app = express();
 
 //convert row strings into js objects
 app.use(express.json());
+
+
+// Serve static files from the 'uploads' directory
+//:TODO secure this folder (only logged in users at least)
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 //cors
 app.use(

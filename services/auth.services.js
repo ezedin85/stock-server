@@ -1,4 +1,5 @@
 const SessionModel = require("../models/session.model");
+const LocationModel = require("../models/location.model");
 const UserModel = require("../models/user.model");
 const appAssert = require("../utils/appAssert");
 const { fiveMinutesFromNow, oneDayFromNow } = require("../utils/date");
@@ -12,10 +13,16 @@ const { compareValue } = require("../utils/bcrypt");
 
 const loginUser = async ({ phone, password, userAgent }) => {
   // Find user by phone
-  const user = await UserModel.findOne({ phone });
+  const user = await UserModel.findOne({ phone }).populate(
+    "locations.location"
+  );
 
-  // Assert user exists
-  appAssert(user, HTTP_STATUS.UNAUTHORIZED, "Invalid phone number or password");
+  // Assert user exists AND is not deleted
+  appAssert(
+    user && !user.deleted,
+    HTTP_STATUS.UNAUTHORIZED,
+    "Invalid phone number or password"
+  );
 
   // Check if password is correct
   const isValid = await compareValue(password, user.password);
@@ -33,6 +40,37 @@ const loginUser = async ({ phone, password, userAgent }) => {
   );
 
   const userId = user._id;
+
+  //# check current locaiton is not deleted, if so assign new current location
+  // find current location
+  const currentLocationEntry = user.locations.find(
+    (loc) => loc.isCurrent && !loc.location?.deleted
+  );
+
+  console.log({ currentLocationEntry });
+  if (!currentLocationEntry) {
+    // Step 4: Find another location to set as current
+    const newCurrentLocationEntry = user.locations.find(
+      (loc) => !loc.location?.deleted
+    );
+
+    //asser user has other undeleted locations
+    appAssert(newCurrentLocationEntry, HTTP_STATUS.BAD_REQUEST, "You have not been assigned to any location");
+
+    //Update the current location
+    user.locations = user.locations.map(loc => ({
+      ...loc,
+      isCurrent: loc.location._id.equals(newCurrentLocationEntry.location._id)
+    }));
+
+
+    await user.save(); // Save the updated user
+
+    console.log(`🔴`);
+    console.log(user);
+    
+  }
+
 
   // Create a session
   const session = await SessionModel.create({

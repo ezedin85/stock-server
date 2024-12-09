@@ -1,9 +1,24 @@
 const { Router } = require("express");
-const { getUserHandler } = require("../controllers/user.controller");
+const {
+  getMe,
+  createUser,
+  updateUser,
+  index,
+  getUser,
+  deleteUser
+} = require("../controllers/user.controller");
+const { uploadProfilePhoto } = require("../middlewares/multer");
 
 // prefix: /user
-const userRoutes = Router();
+const router = Router();
 
-userRoutes.get("/", getUserHandler);
+router.get("/", index);
+router.get("/me", getMe);
+router.get("/:id", getUser);
+router.post("/create", uploadProfilePhoto, createUser);
+router.post("/update/:id", uploadProfilePhoto, updateUser);
+router.delete("/delete/:id", deleteUser);
 
-module.exports = userRoutes;
+// router.get("/change-location/:location", changeLocation);
+
+module.exports = router;

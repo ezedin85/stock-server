@@ -5,7 +5,6 @@ const {
   refreshHandler,
 } = require("../controllers/auth.controller");
 
-// prefix: /auth
 const authRoutes = Router();
 
 authRoutes.post("/login", loginHandler);
