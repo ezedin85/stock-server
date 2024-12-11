@@ -9,6 +9,7 @@ const productUnitRoutes = require("./productUnit.routes");
 const productCategoryRoutes = require("./productCategory.routes");
 const productRoutes = require("./product.routes");
 const transactionRoutes = require("./transaction.routes");
+const paymentRoutes = require("./payment.routes");
 
 const authenticate = require("../middlewares/authenticate")
 
@@ -24,6 +25,7 @@ router.use("/product-units", authenticate, productUnitRoutes);
 router.use("/product-categories", authenticate, productCategoryRoutes);
 router.use("/products", authenticate, productRoutes);
 router.use("/transactions", authenticate, transactionRoutes);
+router.use("/payments", authenticate, paymentRoutes);
 
 
 module.exports = router;

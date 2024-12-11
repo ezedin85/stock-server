@@ -13,7 +13,7 @@ const handleAppError = (res, err) => {
 };
 
 const errorHandler = (err, req, res, next) => {
-  console.log(`🔸PATH: ${req.path}`, err.message);
+  console.log(`🔸PATH: ${req.path}`, err);
 
   //if an error occured [eg. session expiry, no session]
   // while refreshing, clear the cookies

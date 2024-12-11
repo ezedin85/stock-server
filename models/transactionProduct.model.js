@@ -23,7 +23,6 @@ const transactionProductSchema = mongoose.Schema(
     ],
     unit_price: { type: Number, required: true, min: 0.01 }, // greater than 0
     vat_percentage: Number, // greater than 0
-    
   },
   { timestamps: true }
 );

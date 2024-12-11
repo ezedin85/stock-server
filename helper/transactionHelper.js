@@ -49,7 +49,7 @@ const validateTransaction = async (req, products) => {
     deleted: false,
   });
   console.log(contact_data);
-  
+
   appAssert(
     contact_data,
     HTTP_STATUS.BAD_REQUEST,
@@ -251,7 +251,7 @@ async function purchaseProduct({
   );
 }
 
-//🟩  Saves a single sale Product */
+//🟩  a helper to Save a single sale Product */
 async function saleProduct({
   location,
   session,
@@ -394,9 +394,471 @@ const saveSoldProducts = async ({
   }
 };
 
+// 🟩 Get List of Transactions with total and paid amount */
+async function getTransactions({
+  transaction_type,
+  filters,
+  payment_filter,
+  locations,
+  start,
+  length,
+}) {
+  try {
+    const transactions = await TransactionModel.aggregate([
+      {
+        $match: {
+          ...filters,
+          transaction_type: transaction_type,
+          location: { $in: locations },
+        },
+      },
+      {
+        $lookup: {
+          from: "transactionproducts",
+          localField: "_id",
+          foreignField: "transaction_id",
+          as: "trx_products",
+        },
+      },
+      {
+        $unwind: {
+          path: "$trx_products",
+          preserveNullAndEmptyArrays: true, // Keep transactions even if they have no trx_products
+        },
+      },
+
+      // Unwind batches within transactionProducts to calculate total trx product amount
+      {
+        $unwind: {
+          path: "$trx_products.batches",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      // Group by transaction ID to calculate total amount for each transaction
+
+      {
+        $group: {
+          _id: "$_id",
+          // Calculating the total amount by summing up values computed in the $let block
+          total_amount: {
+            $sum: {
+              $let: {
+                // Defining variables (base amount, percentage)
+                vars: {
+                  // Calculating base_amount (qty * unit_price)
+                  base_amount: {
+                    $multiply: [
+                      { $ifNull: ["$trx_products.batches.quantity", 0] },
+                      { $ifNull: ["$trx_products.unit_price", 0] },
+                    ],
+                  },
+                  percentage: {
+                    $ifNull: ["$trx_products.vat_percentage", 0],
+                  },
+                },
+                in: {
+                  // Conditional logic to adjust the base_amount based on the percentage value
+                  $cond: {
+                    // Check if the percentage is greater than 0
+                    if: { $gt: ["$$percentage", 0] },
+                    then: {
+                      // If percentage > 0, add the percentage of the base_amount to the base_amount
+                      $add: [
+                        "$$base_amount",
+                        {
+                          $multiply: [
+                            "$$base_amount",
+                            { $divide: ["$$percentage", 100] }, // Convert percentage to a decimal (divide by 100)
+                          ],
+                        },
+                      ],
+                    },
+                    else: "$$base_amount", // If percentage is 0 or less, leave base_amount unchanged
+                  },
+                },
+              },
+            },
+          },
+
+          // Retaining the first document in the group (usually used for extracting additional details from the first record)
+          trx_detail: { $first: "$$ROOT" },
+        },
+      },
+
+      // Lookup to bring in payments data for each transaction
+      {
+        $lookup: {
+          from: "payments",
+          localField: "_id",
+          foreignField: "transaction",
+          as: "payments",
+        },
+      },
+
+      // Unwind payments to calculate the total payment amount
+      {
+        $unwind: {
+          path: "$payments",
+          preserveNullAndEmptyArrays: true, // Keep transactions even if there are no payments
+        },
+      },
+
+      // Group again to sum up payments and retain total_amount
+      {
+        $group: {
+          _id: "$_id",
+          total_amount: { $first: "$total_amount" },
+          total_paid: { $sum: { $ifNull: ["$payments.amount", 0] } },
+          trx_detail: { $first: "$trx_detail" },
+        },
+      },
+
+      // Add details from transaction, adminusers, and contacts for the final output
+      {
+        $addFields: {
+          trx_id: "$trx_detail.trx_id",
+          note: "$trx_detail.note",
+          transaction_type: "$trx_detail.transaction_type",
+          createdAt: "$trx_detail.createdAt",
+        },
+      },
+
+      // Lookup for admin user who created the transaction
+      {
+        $lookup: {
+          from: "users",
+          localField: "trx_detail.created_by",
+          foreignField: "_id",
+          as: "created_by",
+        },
+      },
+      {
+        $unwind: {
+          path: "$created_by",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      // Lookup for contact associated with the transaction
+      {
+        $lookup: {
+          from: "contacts",
+          localField: "trx_detail.contact",
+          foreignField: "_id",
+          as: "contact",
+        },
+      },
+      {
+        $unwind: {
+          path: "$contact",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      // Lookup for location associated with the transaction
+      {
+        $lookup: {
+          from: "locations",
+          localField: "trx_detail.location",
+          foreignField: "_id",
+          as: "location",
+        },
+      },
+      {
+        $unwind: {
+          path: "$location",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      { $match: payment_filter },
+
+      // Final projection to format the output fields
+      {
+        $facet: {
+          // First facet for paginated data
+          data: [
+            {
+              $project: {
+                trx_id: 1,
+                note: 1,
+                transaction_type: 1,
+                createdAt: 1,
+                total_amount: 1,
+                total_paid: 1,
+                created_by: {
+                  first_name: "$created_by.first_name",
+                  last_name: "$created_by.last_name",
+                  _id: "$created_by._id",
+                },
+                contact: {
+                  name: "$contact.name",
+                  _id: "$contact._id",
+                },
+                location: "$location.name",
+              },
+            },
+            { $sort: { createdAt: -1 } },
+            { $skip: parseInt(start, 10) },
+            { $limit: parseInt(length, 10) },
+          ],
+          // Second facet for the total count of records (before skip and limit)
+          recordsFiltered: [
+            {
+              $count: "total", // Count the total number of documents matching the conditions
+            },
+          ],
+          grand_total: [
+            {
+              $group: {
+                _id: null,
+                amount: { $sum: "$total_amount" }, // Sum of total_amount across all documents
+                paid: { $sum: "$total_paid" }, // Sum of total_paid across all documents
+              },
+            },
+          ],
+        },
+      },
+      {
+        $project: {
+          data: 1,
+          grand_total_amount: {
+            $ifNull: [{ $arrayElemAt: ["$grand_total.amount", 0] }, 0],
+          },
+          grand_total_paid: {
+            $ifNull: [{ $arrayElemAt: ["$grand_total.paid", 0] }, 0],
+          },
+          recordsFiltered: {
+            // Extract the count from the recordsFiltered facet
+            $ifNull: [{ $arrayElemAt: ["$recordsFiltered.total", 0] }, 0],
+          },
+        },
+      },
+    ]);
+
+    return transactions[0];
+  } catch (error) {
+    console.error(
+      "Error fetching the ten transactions with total amount and payments:",
+      error
+    );
+    throw error;
+  }
+}
+
+async function applyReturn({
+  trx_id,
+  location,
+  trx_item_id,
+  return_amt,
+  unit_price,
+  vat_percentage,
+  updated_by,
+}) {
+  const session = await mongoose.startSession(); // Start a session
+  session.startTransaction(); // Begin the transaction
+
+  try {
+    const transaction = await TransactionModel.findOne({
+      _id: trx_id,
+      location,
+    }).session(session);
+
+    //assert transaction exists
+    appAssert(
+      transaction,
+      HTTP_STATUS.BAD_REQUEST,
+      "Selected sale not found at your current location."
+    );
+
+    const single_trx = await TransactionProductModel.findOne({
+      _id: trx_item_id,
+      transaction_id: trx_id,
+    });
+    //assert transaction product exists
+    appAssert(
+      single_trx,
+      HTTP_STATUS.BAD_REQUEST,
+      "Selected Transaction Item not found"
+    );
+
+    let remaining_return = return_amt;
+
+    // Loop through batches of this single trx in reverse order for (FIFO)
+    // we remove the last adjustment first b/c in FIFO, the first one is calculated first
+    for (
+      let i = single_trx.batches?.length - 1;
+      i >= 0 && remaining_return > 0;
+      i--
+    ) {
+      const batch = single_trx.batches[i];
+
+      // if the remainig return is greater than the batch quantity, remove this batch from this transaction
+      if (remaining_return >= batch.quantity) {
+        // Subtract the quantity of the current batch from the remaining return amount.
+        remaining_return -= batch.quantity;
+
+        // return items to the batch
+        await BatchModel.findOneAndUpdate(
+          { _id: batch.batch, location },
+          {
+            $inc: { quantity_in_stock: batch.quantity },
+          },
+          { session }
+        );
+
+        // Remove this batch b/c the items taken are returned back to the batch
+        single_trx.batches.splice(i, 1);
+      } else {
+        //if only some of items taken from the batch are being returned, return back the returned amount
+
+        // deduct trx batch quantity
+        batch.quantity -= remaining_return;
+
+        // Update batch quantity for partial deduction
+        await BatchModel.findOneAndUpdate(
+          { _id: batch.batch, location },
+          {
+            $inc: { quantity_in_stock: remaining_return }, // return to the stock
+          },
+          { session }
+        );
+
+        remaining_return = 0; // Deduction is done
+      }
+    }
+
+    single_trx.unit_price = unit_price;
+    single_trx.vat_percentage = vat_percentage;
+    await single_trx.save({ session });
+    // Save the updated stock adjustment
+    transaction.updated_by = updated_by;
+    await transaction.save({ session });
+
+    await session.commitTransaction(); // Commit the transaction
+    session.endSession(); // End the session
+
+    return transaction;
+  } catch (error) {
+    await session.abortTransaction(); // Rollback the transaction in case of error
+    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+  } finally {
+    // End the session
+    session.endSession();
+  }
+}
+
+const applyNewStockOut = async ({
+  req,
+  trx_id,
+  trx_item_id,
+  additional_deduct_amount,
+  unit_price,
+  vat_percentage,
+  updated_by,
+}) => {
+  const session = await mongoose.startSession(); // Start a session
+  session.startTransaction(); // Begin the transaction
+
+  try {
+    const location = req.currentLocation;
+
+    // Find the transaction by ID within the session
+    const transaction = await TransactionModel.findOne({
+      _id: trx_id,
+      location,
+    }).session(session);
+
+    //assert transaction exists
+    appAssert(
+      transaction,
+      HTTP_STATUS.BAD_REQUEST,
+      "Selected sale not found at your current location."
+    );
+
+    const single_trx = await TransactionProductModel.findOne({
+      _id: trx_item_id,
+      transaction_id: trx_id,
+    });
+
+    //assert transaction product exists
+    appAssert(
+      single_trx,
+      HTTP_STATUS.BAD_REQUEST,
+      "Selected Transaction Item not found"
+    );
+
+    let new_stockout_data = [];
+
+    // Retrieve batches with available stock and unexpired items, sorted by creation date (FIFO).
+    const batches_with_available_stock = await common.getStockAvailableBatches({
+      location,
+      product_id: single_trx.product,
+    });
+
+    let total_decreased = 0; // Tracks the total quantity decreased across multiple batches
+    for (const batch of batches_with_available_stock) {
+      // Stop processing if the required quantity has already been fulfilled
+      if (total_decreased >= additional_deduct_amount) {
+        break;
+      }
+
+      // Determine the quantity to deduct from this batch as the smaller value between
+      // the stock available in the batch and the remaining quantity needed to fulfill the order
+      let qty_to_decrease_from_this_batch = Math.min(
+        batch.quantity_in_stock,
+        additional_deduct_amount - total_decreased
+      );
+
+      //data for adding in single trx data
+      new_stockout_data.push({
+        batch: batch._id,
+        quantity: qty_to_decrease_from_this_batch,
+      });
+
+      // Update the cumulative total quantity sold
+      total_decreased += qty_to_decrease_from_this_batch;
+
+      // Deduct the quantity sold from the batch’s available stock in the inventory
+      await BatchModel.findOneAndUpdate(
+        { _id: batch._id, location },
+        {
+          $inc: { quantity_in_stock: -qty_to_decrease_from_this_batch },
+        },
+        { session }
+      );
+    }
+
+    single_trx.batches?.push(...new_stockout_data);
+    single_trx.unit_price = unit_price;
+    single_trx.vat_percentage = vat_percentage;
+    await single_trx.save({ session });
+
+    transaction.updated_by = updated_by;
+    // Save the updated stock adjustment
+    await transaction.save({ session });
+
+    // Commit the transaction if everything went well
+    await session.commitTransaction();
+  } catch (error) {
+    // If an error occurred, abort the transaction
+    await session.abortTransaction();
+    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+  } finally {
+    // End the session
+    session.endSession();
+  }
+};
+
 module.exports = {
   validateTransaction,
   validateTrxProducts,
   savePurchasedProducts,
   saveSoldProducts,
+  getTransactions,
+  applyReturn,
+  applyNewStockOut,
+  purchaseProduct,
+  saleProduct
 };
