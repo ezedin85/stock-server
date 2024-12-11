@@ -262,6 +262,7 @@ exports.updateGeneralTrxInfo = catchErrors(async (req, res) => {
     .json({ message: `${transaction.transaction_type} Updated Successfully` });
 });
 
+
 exports.deleteTrxProduct = catchErrors(async (req, res) => {
   // validate request
 

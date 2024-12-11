@@ -77,13 +77,16 @@ const checkStockAvailability = async ({ location, items }) => {
     const current_product = await ProductModel.findOne({
       _id: product,
       deleted: false,
-    });
+    }).populate({ path: "unit", select: "code" });
     if (!current_product) {
       return {
         can_proceed: false,
         stock_error: `Product not found for ID ${product}.`,
       };
     }
+
+    console.log(current_product);
+    
 
     // Get the current stock balance for the product
     const current_balance = await getStockBalance({
@@ -99,7 +102,7 @@ const checkStockAvailability = async ({ location, items }) => {
     if (stock_balance < quantity) {
       return {
         can_proceed: false,
-        stock_error: `Insufficient stock for product ${current_product.name}. Allowed: ${stock_balance}, Requested: ${quantity}`,
+        stock_error: `Insufficient stock for product ${current_product.name}. \nMaximum Allowed: ${stock_balance} ${current_product.unit?.code} \nRequested: ${quantity} ${current_product.unit?.code}`,
       };
     }
   }

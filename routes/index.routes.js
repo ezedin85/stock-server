@@ -11,6 +11,7 @@ const productRoutes = require("./product.routes");
 const transactionRoutes = require("./transaction.routes");
 const paymentRoutes = require("./payment.routes");
 const stockAdjustmentRoutes = require("./stockAdjustment.routes");
+const stockTransferRoutes = require("./stockTransfer.routes");
 
 const authenticate = require("../middlewares/authenticate")
 
@@ -28,6 +29,7 @@ router.use("/products", authenticate, productRoutes);
 router.use("/transactions", authenticate, transactionRoutes);
 router.use("/payments", authenticate, paymentRoutes);
 router.use("/stock-adjustments", authenticate, stockAdjustmentRoutes);
+router.use("/stock-transfers", authenticate, stockTransferRoutes);
 
 
 module.exports = router;
