@@ -186,7 +186,7 @@ exports.getRecord = catchErrors(async (req, res) => {
     location,
   });
 
-  //assert transaction exist and user is allowd for the trx location
+  //assert transaction exist and user is allowd with his current trx location
   appAssert(
     transaction,
     HTTP_STATUS.BAD_REQUEST,
@@ -587,7 +587,7 @@ exports.addSaleItem = catchErrors(async (req, res) => {
     transaction_type: "sale",
   });
 
-  //assert transaction exist and user is allowd for the trx location
+  //assert transaction exist and user is allowd with his current trx location
   appAssert(
     transaction,
     HTTP_STATUS.BAD_REQUEST,
@@ -652,7 +652,7 @@ exports.addPurchaseItem = catchErrors(async (req, res) => {
     transaction_type: "purchase",
   });
 
-  //assert transaction exist and user is allowd for the trx location
+  //assert transaction exist and user is allowd with his current trx location
   appAssert(
     transaction,
     HTTP_STATUS.BAD_REQUEST,
