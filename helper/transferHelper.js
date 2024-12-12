@@ -63,37 +63,37 @@ const getTransfers = async ({ location }) => {
       },
     },
     {
-        $lookup: {
-            from: "transferproducts",
-            localField: "_id",
-            foreignField: "transfer_id",
-            as: "product_transfers"
-        }
+      $lookup: {
+        from: "transferproducts",
+        localField: "_id",
+        foreignField: "transfer_id",
+        as: "product_transfers",
+      },
     },
     {
-        $addFields: {
-            is_closed: {
-                $allElementsTrue: {
-                    $map: {
-                        input: "$product_transfers",
-                        as: "product_transfer",
-                        in: {
-                            $eq: [
-                                "$$product_transfer.total_quantity",
-                                {
-                                    $add: [
-                                        "$$product_transfer.returned_quantity",
-                                        { 
-                                            $sum: "$$product_transfer.receiving_batches.quantity" 
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        }
+      $addFields: {
+        is_closed: {
+          $allElementsTrue: {
+            $map: {
+              input: "$product_transfers",
+              as: "product_transfer",
+              in: {
+                $eq: [
+                  "$$product_transfer.total_quantity",
+                  {
+                    $add: [
+                      "$$product_transfer.returned_quantity",
+                      {
+                        $sum: "$$product_transfer.receiving_batches.quantity",
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
     },
     {
       $project: {
@@ -102,17 +102,16 @@ const getTransfers = async ({ location }) => {
         sender: { _id: 1, name: 1, location_type: 1 },
         receiver: { _id: 1, name: 1, location_type: 1 },
         createdAt: 1,
-        is_closed: 1
+        is_closed: 1,
       },
     },
     {
       $sort: { createdAt: -1 },
     },
   ]);
-  
+
   return transfers;
 };
-
 
 const validateTransferProducts = (products) => {
   //loop thorugh products & remove products without product or quantity
@@ -246,4 +245,170 @@ const transferProducts = async ({
   }
 };
 
-module.exports = { getTransfers, validateTransferProducts, transferProducts };
+const returnTransferedProduct = async ({
+  transfer_product_id,
+  transfer_id,
+  new_returning_quantity,
+}) => {
+  //creating session for data integrity
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    //get the transfer product data
+    const transferProduct = await TransferProductModel.findOne({
+      _id: transfer_product_id,
+      transfer_id,
+    })
+      .session(session)
+      .populate("sending_batches.batch");
+
+    let remaining_return = new_returning_quantity;
+
+    // NOTE: Iterate through the sending batches in reverse order to handle returns.
+    // Since batches are saved based on the order they were stocked out,
+    // we return the most recently stocked-out batch first, as if it was never out.
+    for (
+      let i = transferProduct.sending_batches?.length - 1;
+      i >= 0 && remaining_return > 0;
+      i--
+    ) {
+      const sending_batch = transferProduct.sending_batches[i];
+
+      //get remaining quantity from transfer
+      const unreceived_qty_from_this_sending_batch =
+        sending_batch.quantity - sending_batch.received_qty;
+
+      //quantity to return to current batch
+      let qty_to_return_from_this_batch = Math.min(
+        unreceived_qty_from_this_sending_batch,
+        remaining_return
+      );
+
+      //if no item is received && all items are being returned, remove sending batch
+      if (
+        sending_batch.received_qty === 0 &&
+        qty_to_return_from_this_batch === sending_batch.quantity
+      ) {
+        //remove current sending batch
+        transferProduct.sending_batches.splice(i, 1);
+      } else {
+        //deduct possible & needed quantity
+        sending_batch.quantity -= qty_to_return_from_this_batch;
+      }
+
+      // Deduct the quantity returned from the batch’s available stock in the inventory
+      await BatchModel.findByIdAndUpdate(
+        sending_batch.batch,
+        {
+          $inc: { quantity_in_stock: qty_to_return_from_this_batch },
+        },
+        { session }
+      );
+
+      //deduct remaining return quantity
+      remaining_return -= qty_to_return_from_this_batch;
+    }
+
+    transferProduct.returned_quantity += new_returning_quantity; //increase the returned quantity for histoty
+    await transferProduct.save({ session }); //save the operation
+
+    await session.commitTransaction();
+  } catch (error) {
+    // If an error occurred, abort the transaction
+    await session.abortTransaction();
+    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+  } finally {
+    // End the session
+    session.endSession();
+  }
+};
+
+const receiveTransferredProduct = async ({
+  location,
+  transfer_product_id,
+  transfer_id,
+  new_receiving_quantity,
+}) => {
+  //creating session for data integrity
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    //get the transfer product data
+    const transferProduct = await TransferProductModel.findOne({
+      _id: transfer_product_id,
+      transfer_id,
+    })
+      .session(session)
+      .populate("sending_batches.batch");
+
+    let new_receiving_batches = [];
+    let remainig_receiving_qty = new_receiving_quantity;
+    for (const sending_batch of transferProduct.sending_batches) {
+      // Stop processing if the required quantity has already been fulfilled
+      if (remainig_receiving_qty <= 0) {
+        break;
+      }
+
+      //
+      const unreceived_qty_from_this_sending_batch =
+        sending_batch.quantity - sending_batch.received_qty;
+
+      // if all items from this sending batch are returned or received before, skip this sending batch
+      if (unreceived_qty_from_this_sending_batch <= 0) continue;
+
+      // Determine the quantity to deduct from this batch as the smaller value between
+      // the stock available in the batch and the remaining quantity needed to fulfill the order
+      let qty_to_transfer_from_this_batch = Math.min(
+        unreceived_qty_from_this_sending_batch,
+        remainig_receiving_qty
+      );
+
+      //add items to the receiving location
+      const batch = await BatchModel.create(
+        [
+          {
+            product: transferProduct.product,
+            location,
+            total_quantity: qty_to_transfer_from_this_batch,
+            quantity_in_stock: qty_to_transfer_from_this_batch,
+            unit_purchase_cost: sending_batch.batch?.unit_purchase_cost,
+            expiry_date: sending_batch.batch?.expiry_date,
+          },
+        ],
+        { session }
+      );
+
+      //increase received quantity
+      sending_batch.received_qty += qty_to_transfer_from_this_batch;
+
+      //deduct the remaining receiving quantity
+      remainig_receiving_qty -= qty_to_transfer_from_this_batch;
+
+      //save the receiving batches
+      new_receiving_batches.push({
+        batch: batch?.[0]?._id,
+        quantity: qty_to_transfer_from_this_batch,
+      });
+    }
+
+    transferProduct.receiving_batches.push(...new_receiving_batches);
+    await transferProduct.save({ session });
+
+    await session.commitTransaction();
+  } catch (error) {
+    // If an error occurred, abort the transaction
+    await session.abortTransaction();
+    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+  } finally {
+    // End the session
+    session.endSession();
+  }
+};
+
+module.exports = {
+  getTransfers,
+  validateTransferProducts,
+  transferProducts,
+  returnTransferedProduct,
+  receiveTransferredProduct,
+};

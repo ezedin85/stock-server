@@ -17,8 +17,8 @@ router.post("/create", addRecord);
 
 router.get("/detail/:id", getRecord);
 
-router.post("/receive/:transfer_product_id", receiveProduct);
+router.patch("/receive/:transfer_product_id", receiveProduct);
 
-router.post("/return/:transfer_product_id", returnProduct);
+router.patch("/return/:transfer_product_id", returnProduct);
 
 module.exports = router;

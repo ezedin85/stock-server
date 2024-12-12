@@ -160,7 +160,7 @@ exports.returnProduct = catchErrors(async (req, res) => {
     `No suffiecient remaining quantity. Remaining: ${total_remaining_qty}, Requested: ${quantity}`
   );
 
-  await returnTransferedProduct({
+  await tsfrHelper.returnTransferedProduct({
     transfer_product_id,
     transfer_id: transfer._id,
     new_returning_quantity: quantity,
@@ -170,4 +170,73 @@ exports.returnProduct = catchErrors(async (req, res) => {
   //AND RECEIVE PRODUCT ALSO YKERAL
 
   // return response
+  return res
+    .status(HTTP_STATUS.OK)
+    .json({ message: `${quantity} Item(s) Returned Successfully` });
 });
+
+exports.receiveProduct = catchErrors(async (req, res) => {
+  // validate request
+  const { transfer_product_id } = req.params;
+  const quantity = Number(req.body?.quantity);
+  const location = req.currentLocation;
+
+  //validate required fields
+  utils.validateRequiredFields({ quantity });
+
+  //get the transfer product data
+  const transferProduct = await TransferProductModel.findOne({
+    _id: transfer_product_id,
+  });
+
+  // assert tharnsfer product exists
+  appAssert(
+    transferProduct,
+    HTTP_STATUS.BAD_REQUEST,
+    "Transfer Product not found!"
+  );
+
+  //find the transfer adn check if the current location is the receiver
+  const transfer = await TransferModel.findOne({
+    _id: transferProduct.transfer_id,
+    receiver: location,
+  });
+
+  //assert user is has access to the sender location
+  appAssert(
+    transfer,
+    HTTP_STATUS.BAD_REQUEST,
+    "This transfer is not available for receiving at your current location."
+  );
+
+  // call service
+  // check if there is enough quantity
+  //get total received, returned, received and returned, remaining and total quantity
+  const total_qty = transferProduct.total_quantity;
+  const prev_returned_qty = transferProduct.returned_quantity;
+  let prev_received_qty = transferProduct.receiving_batches.reduce(
+    (acc, item) => acc + item.quantity,
+    0
+  );
+  const received_and_returned_qty = prev_returned_qty + prev_received_qty;
+  const total_remaining_qty = total_qty - received_and_returned_qty;
+
+  //prevent receiving if requested quantity is greater than remaining
+  appAssert(
+    quantity <= total_remaining_qty,
+    HTTP_STATUS.BAD_REQUEST,
+    `No suffiecient remaining quantity. Remaining: ${total_remaining_qty}, Requested: ${quantity}`
+  );
+
+  await tsfrHelper.receiveTransferredProduct({
+    location,
+    transfer_product_id,
+    transfer_id: transfer._id,
+    new_receiving_quantity: quantity,
+  });
+
+  return res
+  .status(HTTP_STATUS.OK)
+  .json({ message: `${quantity} Item(s) Received Successfully` });
+});
+
