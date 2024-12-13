@@ -9,10 +9,16 @@ exports.index = catchErrors(async (req, res) => {
   // call service
   const locations = await LocationModel.find({
     deleted: false,
-  }).populate({
-    path: "created_by",
-    select: "first_name last_name",
-  });
+  }).populate([
+    {
+      path: "created_by",
+      select: "first_name last_name",
+    },
+    {
+      path: "updated_by",
+      select: "first_name last_name",
+    },
+  ]);
 
   // return response
   return res.status(HTTP_STATUS.OK).json(locations);
@@ -125,6 +131,14 @@ exports.updateRecord = catchErrors(async (req, res) => {
     "Location names must be unique. This name is already taken"
   );
 
+  // 4. Check if the location exists and is not marked as deleted
+  const locationData = await LocationModel.findOne({
+    _id: id,
+    location_type,
+    deleted: false,
+  });
+  appAssert(locationData, HTTP_STATUS.NOT_FOUND, "Location not found!");
+
   // call service
   const updatedRecord = await LocationModel.findByIdAndUpdate(
     id,
@@ -139,12 +153,16 @@ exports.updateRecord = catchErrors(async (req, res) => {
   );
 
   //assert location found and updated
-  appAssert(updatedRecord, HTTP_STATUS.BAD_REQUEST, "Location not found!");
+  appAssert(
+    updatedRecord,
+    HTTP_STATUS.BAD_REQUEST,
+    "Unable to update the contact. Please try again later."
+  );
 
   // return response
   return res
     .status(HTTP_STATUS.OK)
-    .json({ message: `${location_type} Updated Successfull` });
+    .json({ message: `${location_type} Updated Successfully` });
 });
 
 exports.deleteRecord = catchErrors(async (req, res) => {

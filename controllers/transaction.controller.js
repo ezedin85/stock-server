@@ -1,12 +1,12 @@
 const catchErrors = require("../utils/catchErrors");
 const HTTP_STATUS = require("../constants/http");
 const ContactModel = require("../models/contact.model");
-const ProductModel = require("../models/product.model");
+const UserModel = require("../models/user.model");
 const TransactionModel = require("../models/transaction.model");
 const TransactionProductModel = require("../models/transactionProduct.model");
 const appAssert = require("../utils/appAssert");
 const utils = require("../utils/utils");
-const trxHelper = require("../helper/transactionHelper");
+const trxHelper = require("../helpers/transactionHelper");
 const mongoose = require("mongoose");
 const BatchModel = require("../models/batch.model");
 
@@ -70,22 +70,28 @@ exports.getRecords = catchErrors(async (req, res) => {
     payment_filter = { $expr: { $lt: ["$total_paid", "$total_amount"] } };
   }
 
-  // Ensure locs is an array, default to an empty array if undefined or not an array
-  let selected_locations = Array.isArray(locs) ? locs : locs ? [locs] : [];
+  //locations
+  const selected_locations = locs
+    ?.split(",")
+    ?.map((loc) => loc.trim()) //remove whitespace
+    ?.filter(Boolean) //remove empty values
+    || [] //if no selected location
 
   // Initialize locations with the current selected location
   let locations = [new mongoose.Types.ObjectId(location)];
 
   // Only proceed if there are selected locations
   if (selected_locations.length) {
+    const user = await UserModel.findById(req.userId)
+
     // Get user's location IDs as a Set for faster lookups
     const usersLocationsIds = new Set(
-      req.user.locations.map((item) => item._id?.toString())
+      user.locations.map((item) => item._id?.toString())
     );
 
     // Filter and convert selected locations to ObjectId, then push them to the locations array
     selected_locations
-      .filter((loc) => usersLocationsIds.has(loc.toString()))
+      .filter((loc) => usersLocationsIds.has(loc.toString())) //check if use has access to the selected location
       .forEach((loc) => locations.push(new mongoose.Types.ObjectId(loc)));
   }
 
@@ -102,6 +108,8 @@ exports.getRecords = catchErrors(async (req, res) => {
     payment_filter,
     start: 0,
     length: 100,
+    // start: s,
+    // length: l,
   });
 
   // Count the total number of transactions based on the provided locations and transaction type
@@ -208,7 +216,7 @@ exports.getRecord = catchErrors(async (req, res) => {
 
   // return response
   return res.status(HTTP_STATUS.OK).json({
-    transaction,
+    ...transaction.toObject(),
     transaction_products,
   });
 });
@@ -236,7 +244,6 @@ exports.updateGeneralTrxInfo = catchErrors(async (req, res) => {
 
   const expected_contact_type =
     transaction.transaction_type == "purchase" ? "supplier" : "customer";
-  console.log({ expected_contact_type, a: transaction.transaction_type });
   const contact_data = await ContactModel.findOne({
     _id: contact,
     contact_type: expected_contact_type,
@@ -261,7 +268,6 @@ exports.updateGeneralTrxInfo = catchErrors(async (req, res) => {
     .status(HTTP_STATUS.OK)
     .json({ message: `${transaction.transaction_type} Updated Successfully` });
 });
-
 
 exports.deleteTrxProduct = catchErrors(async (req, res) => {
   // validate request

@@ -1,4 +1,4 @@
-const tsfrHelper = require("../helper/transferHelper");
+const tsfrHelper = require("../helpers/transferHelper");
 const utils = require("../utils/utils");
 const LocationModel = require("../models/location.model");
 const appAssert = require("../utils/appAssert");

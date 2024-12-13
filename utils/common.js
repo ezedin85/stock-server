@@ -2,6 +2,7 @@ const SettingModel = require("../models/setting.model");
 const ProductModel = require("../models/product.model");
 const LocationModel = require("../models/location.model");
 const UserModel = require("../models/user.model");
+const RoleModel = require("../models/role.model");
 const PermissionModel = require("../models/permission.model");
 const appAssert = require("../utils/appAssert");
 const HTTP_STATUS = require("../constants/http");
@@ -308,10 +309,36 @@ const findAdminsWithPermission = async (permission_name) => {
   }
 };
 
+
+// returns a list of permission with user's ability (true, false)
+const hasPermissions = async (req, requiredPermissions) => {
+
+  const user = await UserModel.findById(req.userId);
+  
+  // Fetch the role and its permissions
+  const role = await RoleModel.findOne({
+    _id: user.role,
+    deleted: false,
+  }).populate("permissions");
+
+  const assignedPermissions = role?.permissions || [];
+
+  const permissionResults = requiredPermissions.reduce((result, permission) => {
+    // Checks if the current permission exists in assignedPermissions
+    result[permission] = assignedPermissions.some(
+      (assignedPermission) => assignedPermission.code_name === permission
+    );
+    return result; // Returns the updated result for the next iteration
+  }, {}); // Initial accumulator is an empty object
+
+  return permissionResults;
+};
+
 module.exports = {
   isExpiryDateConsidered,
   checkStockAvailability,
   checkStockAvailability,
   getStockAvailableBatches,
   handleLowStockNotification,
+  hasPermissions,
 };

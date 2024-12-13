@@ -40,9 +40,6 @@ const validateTransaction = async (req, products) => {
   const expected_contact_type =
     transaction_type === "purchase" ? "supplier" : "customer";
 
-  console.log({ expected_contact_type });
-  console.log({ contact });
-
   const contact_data = await ContactModel.findOne({
     _id: contact,
     contact_type: expected_contact_type,

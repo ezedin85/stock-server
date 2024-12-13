@@ -10,8 +10,25 @@ exports.index = catchErrors(async (req, res) => {
   // call service
   const users = await UserModel.find({ deleted: false })
     .select("-password")
-    .populate({ path: "created_by", select: "first_name last_name" });
-
+    .populate([
+      {
+        path: "created_by",
+        select: "first_name last_name",
+      },
+      {
+        path: "updated_by",
+        select: "first_name last_name",
+      },
+      {
+        path: "locations.location",
+        select: "name",
+      },
+      {
+        path: "role",
+        select: "role_name",
+      },
+    ]);
+    
   // return response
   return res.status(HTTP_STATUS.OK).json(users);
 });
@@ -95,7 +112,6 @@ exports.updateUser = catchErrors(async (req, res) => {
 
   locations = JSON.parse(locations);
   console.log(locations);
-  
 
   //assert thier is no file upload error
   appAssert(

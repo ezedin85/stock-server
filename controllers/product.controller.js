@@ -3,20 +3,106 @@ const HTTP_STATUS = require("../constants/http");
 const ProductModel = require("../models/product.model");
 const appAssert = require("../utils/appAssert");
 const utils = require("../utils/utils");
-const { isExpiryDateConsidered } = require("../utils/common");
+const { isExpiryDateConsidered, hasPermissions } = require("../utils/common");
+const mongoose = require("mongoose");
+const UserModel = require("../models/user.model");
+const { getProductsList } = require("../helpers/productHelper");
+
 
 exports.getRecords = catchErrors(async (req, res) => {
+  // validate request
+  const {
+    q, //search query
+    s, //start
+    l, //length
+    locs, //locations
+    stock_status,
+    category,
+  } = req.query;
+
+  const location = req.currentLocation;
+  let filters = {};
+
+  //category filter
+  if (mongoose.Types.ObjectId.isValid(category)) {
+    filters.category = new mongoose.Types.ObjectId(category);
+  }
+
+  // search filter
+  const search_conditions = [];
+  if (q) {
+    const regex = { $regex: q, $options: "i" };
+    search_conditions.push({ name: regex }, { sku: regex });
+  }
+
+  // Add the search conditions to the main query if any exist
+  if (search_conditions.length > 0) {
+    filters["$or"] = search_conditions;
+  }
+
+  // low stock amount filter
+  let stock_filter = {};
+  if (stock_status === "ls") {
+    // ls for low stock
+    stock_filter = { $gte: ["$low_quantity", "$stock_amount"] };
+  }
+
+  //locations
+  const selected_locations = locs
+    ?.split(",")
+    ?.map((loc) => loc.trim()) //remove whitespace
+    ?.filter(Boolean) //remove empty values
+    || [] //if no selected location
+    
+  // Initialize locations with the current selected location
+  let locations = [new mongoose.Types.ObjectId(location)];
+
+  // Only proceed if there are selected locations
+  if (selected_locations.length) {
+    const user = await UserModel.findById(req.userId);
+    // Get user's location IDs as a Set for faster lookups
+    const usersLocationsIds = new Set(
+      user.locations.map((item) => item._id?.toString())
+    );
+
+    // Filter and convert selected locations to ObjectId, then push them to the locations array
+    selected_locations
+      .filter((loc) => usersLocationsIds.has(loc.toString())) //check if use has access to the selected location
+      .forEach((loc) => locations.push(new mongoose.Types.ObjectId(loc)));
+  }
+
+  const { can_view_company_reports, can_create_purchase, can_create_sale } =
+    await hasPermissions(req, [
+      "can_view_company_reports",
+      "can_create_purchase",
+      "can_create_sale",
+    ]);
+
   // call service
-  const products = await ProductModel.find({
-    deleted: false,
-  }).populate([
-    { path: "unit", select: "code" },
-    { path: "category", select: "name" },
-    { path: "created_by", select: "first_name last_name" },
-  ]);
+  const { data, recordsFiltered = 0 } = await getProductsList({
+    // start: s,
+    // length: l,
+    start: 0,
+    length: 100,
+    locations,
+    filters,
+    stock_filter,
+    can_view_company_reports,
+    can_create_purchase,
+    can_create_sale,
+  });
+  const recordsTotal = await ProductModel.countDocuments({});
+
+  console.log({can_view_company_reports, can_create_purchase, can_create_sale});
+  
+console.log(data[0]);
 
   // return response
-  return res.status(HTTP_STATUS.OK).json(products);
+  return res.status(HTTP_STATUS.OK).json({
+    data,
+    recordsTotal,
+    recordsFiltered,
+  });
 });
 
 exports.getRecord = catchErrors(async (req, res) => {
@@ -27,7 +113,7 @@ exports.getRecord = catchErrors(async (req, res) => {
   const product = await ProductModel.findOne({
     _id: id,
     deleted: false,
-  })
+  });
 
   //assert record exists
   appAssert(product, HTTP_STATUS.NOT_FOUND, `Record not found`);
@@ -191,7 +277,7 @@ exports.updateRecord = catchErrors(async (req, res) => {
   );
 
   //assert record found and updated
-  appAssert(updatedRecord, HTTP_STATUS.BAD_REQUEST, "Record not found!");
+  appAssert(updatedRecord, HTTP_STATUS.BAD_REQUEST, "Unable to update the product. Please try again later.");
 
   // return response
   return res
@@ -210,9 +296,8 @@ exports.deleteRecord = catchErrors(async (req, res) => {
   //assert record exists
   appAssert(product, HTTP_STATUS.BAD_REQUEST, "Record not found!");
 
-
-   //if there was Product image, delete it
-   if (product.image) {
+  //if there was Product image, delete it
+  if (product.image) {
     utils.deleteFile(`uploads/product-images/${product.image}`);
   }
   // call service

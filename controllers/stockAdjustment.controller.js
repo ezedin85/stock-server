@@ -8,7 +8,7 @@ const StockAdjustmentModel = require("../models/stockAdjustment.model");
 const StockAdjustmentProductModel = require("../models/stockAdjustmentProduct.model");
 const BatchModel = require("../models/batch.model");
 
-const adjHelper = require("../helper/adjustmentHelper");
+const adjHelper = require("../helpers/adjustmentHelper");
 const mongoose = require("mongoose");
 const {
   checkStockAvailability,

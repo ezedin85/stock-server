@@ -18,10 +18,16 @@ exports.getContacts = catchErrors(async (req, res) => {
   const contacts = await ContactModel.find({
     contact_type,
     deleted: false,
-  }).populate({
-    path: "created_by",
-    select: "first_name last_name",
-  });
+  }).populate([
+    {
+      path: "created_by",
+      select: "first_name last_name",
+    },
+    {
+      path: "updated_by",
+      select: "first_name last_name",
+    },
+  ]);
 
   // return response
   return res.status(HTTP_STATUS.OK).json(contacts);
@@ -102,29 +108,38 @@ exports.updateRecord = catchErrors(async (req, res) => {
     req.body;
   const updated_by = req.userId;
 
-  //asser contact type
+  // 1. Validate contact type
   appAssert(
     CONTACT_TYPES.includes(contact_type),
     HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Contact Type"
+    "Invalid contact type provided."
   );
 
-  //assert required fields
+  // 2. Validate required fields
   utils.validateRequiredFields({ name });
 
+  // 3. Check for duplicate contact name (case-insensitive and excluding current contact)
   const existing_contact = await ContactModel.findOne({
     name: { $regex: new RegExp(`^${name}$`, "i") },
     contact_type,
     _id: { $ne: id },
   });
 
-  //assert no name conflict
   appAssert(
     !existing_contact,
     HTTP_STATUS.BAD_REQUEST,
     `The name for the ${contact_type} must be unique. This name is already in use.`
   );
 
+  // 4. Check if the contact exists and is not marked as deleted
+  const contactData = await ContactModel.findOne({
+    _id: id,
+    contact_type,
+    deleted: false,
+  });
+  appAssert(contactData, HTTP_STATUS.NOT_FOUND, "Contact not found!");
+
+  // 5. Update contact
   // call service
   const updatedRecord = await ContactModel.findByIdAndUpdate(
     id,
@@ -144,12 +159,16 @@ exports.updateRecord = catchErrors(async (req, res) => {
   );
 
   //assert contact found and updated
-  appAssert(updatedRecord, HTTP_STATUS.BAD_REQUEST, "Contact not found!");
+  appAssert(
+    updatedRecord,
+    HTTP_STATUS.BAD_REQUEST,
+    "Unable to update the contact. Please try again later."
+  );
 
   // return response
   return res
     .status(HTTP_STATUS.OK)
-    .json({ message: `${contact_type} Updated Successfull` });
+    .json({ message: `${contact_type} Updated Successfully` });
 });
 
 exports.deleteRecord = catchErrors(async (req, res) => {
