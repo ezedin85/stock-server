@@ -7,19 +7,34 @@ const {
   deleteRecord,
   getLocationNames,
 } = require("../controllers/location.controller");
-const { checkPermission } = require("../middlewares/authorize");
+const {
+  checkPermission,
+  dynamicPermissionCheck,
+} = require("../middlewares/authorize");
 
 //PEMISSIONS
 const permissions = {
-  view: checkPermission("can_view_locations"),
+  view: dynamicPermissionCheck("location_type", {
+    warehouse: "can_view_warehouse",
+    branch: "can_view_branch",
+  }),
   viewNames: checkPermission([
     "can_create_user",
     "can_update_user",
     "can_create_transfers",
   ]),
-  create: checkPermission("can_create_locations"),
-  update: checkPermission("can_update_locations"),
-  delete: checkPermission("can_delete_locations"),
+  create: dynamicPermissionCheck("location_type", {
+    warehouse: "can_create_warehouse",
+    branch: "can_create_branch",
+  }),
+  update: dynamicPermissionCheck("location_type", {
+    warehouse: "can_update_warehouse",
+    branch: "can_update_branch",
+  }),
+  delete: dynamicPermissionCheck("location_type", {
+    warehouse: "can_delete_branch",
+    branch: "can_delete_warehouse",
+  }),
 };
 
 const router = express.Router();
