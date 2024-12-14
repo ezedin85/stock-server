@@ -5,28 +5,45 @@ const {
   addRecord,
   updateGeneralAdjustmentInfo,
   updateStockAdjustment,
-  deleteAdjustmentProduct
+  deleteAdjustmentProduct,
 } = require("../controllers/stockAdjustment.controller");
+const { checkPermission } = require("../middlewares/authorize");
+
+//PEMISSIONS
+const permissions = {
+  view: checkPermission("can_view_stock_adjustment"),
+  create: checkPermission("can_create_stock_adjustment"),
+  update: checkPermission("can_update_stock_adjustment"),
+  delete: checkPermission("can_delete_stock_adjustment"),
+};
 
 const router = Router();
 
-router.get("/", index);
+router
+  .get("/", permissions.view, index)
 
-//get adj detail and adjustment products under adj
-router.get("/detail/:id", getRecord);
+  //get adj detail and adjustment products under adj
+  .get("/detail/:id", permissions.view, getRecord)
 
+  .post("/:adjustment_type/create", permissions.create, addRecord)
 
-router.post("/:adjustment_type/create", addRecord);
+  .patch(
+    "/update/general-info/:id",
+    permissions.update,
+    updateGeneralAdjustmentInfo
+  )
 
-router.patch(
-  "/update/general-info/:id",
-  updateGeneralAdjustmentInfo
-);
+  .patch(
+    "/update-product/:single_adjustment_id",
+    permissions.update,
+    updateStockAdjustment
+  )
 
-router.patch("/update-product/:single_adjustment_id", updateStockAdjustment);
-
-
-//delete adj item
-router.delete("/delete-product/:single_adjustment_id", deleteAdjustmentProduct);
+  //delete adj item
+  .delete(
+    "/delete-product/:single_adjustment_id",
+    permissions.delete,
+    deleteAdjustmentProduct
+  );
 
 module.exports = router;

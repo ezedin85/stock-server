@@ -8,6 +8,14 @@ const mongoose = require("mongoose");
 const UserModel = require("../models/user.model");
 const { getProductsList } = require("../helpers/productHelper");
 
+exports.getProductNameList = catchErrors(async (req, res) => {
+  // call service
+  const products = await ProductModel.find({
+    deleted: false,
+  }).select("name")
+  // return response
+  return res.status(HTTP_STATUS.OK).json(products);
+});
 
 exports.getRecords = catchErrors(async (req, res) => {
   // validate request
@@ -71,7 +79,7 @@ exports.getRecords = catchErrors(async (req, res) => {
       .forEach((loc) => locations.push(new mongoose.Types.ObjectId(loc)));
   }
 
-  const { can_view_company_reports, can_create_purchase, can_create_sale } =
+  const userPermissions =
     await hasPermissions(req, [
       "can_view_company_reports",
       "can_create_purchase",
@@ -87,15 +95,11 @@ exports.getRecords = catchErrors(async (req, res) => {
     locations,
     filters,
     stock_filter,
-    can_view_company_reports,
-    can_create_purchase,
-    can_create_sale,
+    can_view_company_reports: userPermissions['can_view_company_reports'],
+    can_create_purchase: userPermissions['can_create_purchase'],
+    can_create_sale: userPermissions['can_create_sale'],
   });
   const recordsTotal = await ProductModel.countDocuments({});
-
-  console.log({can_view_company_reports, can_create_purchase, can_create_sale});
-  
-console.log(data[0]);
 
   // return response
   return res.status(HTTP_STATUS.OK).json({

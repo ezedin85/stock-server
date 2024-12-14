@@ -28,18 +28,25 @@ exports.index = catchErrors(async (req, res) => {
         select: "role_name",
       },
     ]);
-    
+
   // return response
   return res.status(HTTP_STATUS.OK).json(users);
 });
 
 exports.getMe = catchErrors(async (req, res) => {
   // Fetch the user by their ID from the request object
-  const user = await UserModel.findById(req.userId).populate({
-    path: "locations.location",
-    select: "name",
-    match: { deleted: false },
-  });
+  const user = await UserModel.findById(req.userId).populate([
+    {
+      path: "locations.location",
+      select: "name",
+      match: { deleted: false },
+    },
+    {
+      path: "role",
+      select: "permissions",
+      populate: { path: "permissions", select: "code_name -_id" },
+    }
+  ]).select("first_name last_name phone locations role profileImg");
 
   user.locations = user.locations.filter((loc) => !loc.location.deleted);
 
@@ -47,7 +54,7 @@ exports.getMe = catchErrors(async (req, res) => {
   appAssert(user, HTTP_STATUS.NOT_FOUND, "User not found");
 
   // Return the user data without the password
-  return res.status(HTTP_STATUS.OK).json(user.omitStructure());
+  return res.status(HTTP_STATUS.OK).json(user);
 });
 
 exports.createUser = catchErrors(async (req, res) => {

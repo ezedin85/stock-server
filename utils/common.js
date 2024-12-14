@@ -87,7 +87,6 @@ const checkStockAvailability = async ({ location, items }) => {
     }
 
     console.log(current_product);
-    
 
     // Get the current stock balance for the product
     const current_balance = await getStockBalance({
@@ -309,12 +308,9 @@ const findAdminsWithPermission = async (permission_name) => {
   }
 };
 
-
-// returns a list of permission with user's ability (true, false)
 const hasPermissions = async (req, requiredPermissions) => {
-
   const user = await UserModel.findById(req.userId);
-  
+
   // Fetch the role and its permissions
   const role = await RoleModel.findOne({
     _id: user.role,
@@ -322,16 +318,16 @@ const hasPermissions = async (req, requiredPermissions) => {
   }).populate("permissions");
 
   const assignedPermissions = role?.permissions || [];
+  const assignedPermissionCodes = assignedPermissions.map(
+    (item) => item.code_name
+  );
 
-  const permissionResults = requiredPermissions.reduce((result, permission) => {
-    // Checks if the current permission exists in assignedPermissions
-    result[permission] = assignedPermissions.some(
-      (assignedPermission) => assignedPermission.code_name === permission
-    );
-    return result; // Returns the updated result for the next iteration
-  }, {}); // Initial accumulator is an empty object
-
-  return permissionResults;
+  return Object.fromEntries(
+    requiredPermissions.map((permission) => [
+      permission,
+      assignedPermissionCodes.includes(permission),
+    ])
+  );
 };
 
 module.exports = {

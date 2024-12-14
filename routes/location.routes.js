@@ -1,25 +1,46 @@
 const express = require("express");
 const {
-    index,
-    getLocations,
-    getLocation,
-    addRecord,
-    updateRecord,
-    deleteRecord
+  getLocations,
+  getLocation,
+  addRecord,
+  updateRecord,
+  deleteRecord,
+  getLocationNames,
 } = require("../controllers/location.controller");
+const { checkPermission } = require("../middlewares/authorize");
 
-// const { checkPermission } = require("../../middlewares/role_middleware");
-
+//PEMISSIONS
+const permissions = {
+  view: checkPermission("can_view_locations"),
+  viewNames: checkPermission([
+    "can_create_user",
+    "can_update_user",
+    "can_create_transfers",
+  ]),
+  create: checkPermission("can_create_locations"),
+  update: checkPermission("can_update_locations"),
+  delete: checkPermission("can_delete_locations"),
+};
 
 const router = express.Router();
 
-router.get('/', index);
-router.get('/:location_type', getLocations);
-router.get("/:location_type/:id", getLocation);
-router.post("/:location_type/create",  addRecord);
-router.post('/:location_type/update/:id',  updateRecord);
-router.delete('/:location_type/delete/:id',  deleteRecord);
+// names for dropdown
+router
+  .get("/name-list", permissions.viewNames, getLocationNames)
+
+  //list of locations by type
+  .get("/:location_type", permissions.view, getLocations)
+
+  // single record
+  .get("/:location_type/:id", permissions.view, getLocation)
+
+  // create record
+  .post("/:location_type/create", permissions.create, addRecord)
+
+  // update record
+  .post("/:location_type/update/:id", permissions.update, updateRecord)
+
+  // delete record
+  .delete("/:location_type/delete/:id", permissions.delete, deleteRecord);
 
 module.exports = router;
-
-

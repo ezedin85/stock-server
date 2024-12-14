@@ -6,19 +6,26 @@ const {
   receiveProduct,
   returnProduct,
 } = require("../controllers/stockTransfer.controller");
+const { checkPermission } = require("../middlewares/authorize");
 
-// const { checkPermission } = require("../../middlewares/role_middleware");
+//PEMISSIONS
+const permissions = {
+  view: checkPermission("can_view_transfers"),
+  create: checkPermission("can_create_transfers"),
+  update: checkPermission("can_update_transfers"),
+};
 
 const router = express.Router();
 
-router.get("/", index);
+router
+  .get("/", permissions.view, index)
 
-router.post("/create", addRecord);
+  .post("/create", permissions.create, addRecord)
 
-router.get("/detail/:id", getRecord);
+  .get("/detail/:id", permissions.view, getRecord)
 
-router.patch("/receive/:transfer_product_id", receiveProduct);
+  .patch("/receive/:transfer_product_id", permissions.update, receiveProduct)
 
-router.patch("/return/:transfer_product_id", returnProduct);
+  .patch("/return/:transfer_product_id", permissions.update, returnProduct);
 
 module.exports = router;

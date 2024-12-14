@@ -4,14 +4,19 @@ const appAssert = require("../utils/appAssert");
 const catchErrors = require("../utils/catchErrors");
 const utils = require("../utils/utils");
 const TransactionModel = require("../models/transaction.model");
+const trxHelper = require("../helpers/transactionHelper");
 
 exports.getTrxPayments = catchErrors(async (req, res) => {
   // validate request
-  const { trx_id } = req.params;
+  const { trx_id, transaction_type } = req.params;
   const location = req.currentLocation;
+
+  //assert transaction type
+  trxHelper.assertTransactionType(transaction_type);
 
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
+    transaction_type,
     location,
   });
 
@@ -35,19 +40,20 @@ exports.getTrxPayments = catchErrors(async (req, res) => {
 
 exports.addPayment = catchErrors(async (req, res) => {
   // validate request
-  const { trx_id } = req.params;
-
-  //get data
+  const { trx_id, transaction_type } = req.params;
   const { remark } = req.body;
   const amount = Number(req.body?.amount);
-
   const created_by = req.userId;
   const location = req.currentLocation;
+
+  //assert transaction type
+  trxHelper.assertTransactionType(transaction_type);
 
   utils.validateRequiredFields({ amount });
 
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
+    transaction_type,
     location,
   });
 
@@ -85,18 +91,19 @@ exports.addPayment = catchErrors(async (req, res) => {
 
 exports.updatePayment = catchErrors(async (req, res) => {
   // validate request
-  //get data
-  const { payment_id, trx_id } = req.params;
+  const { payment_id, trx_id, transaction_type } = req.params;
   const { remark } = req.body;
-
   const amount = Number(req.body?.amount);
   const updated_by = req.userId;
   const location = req.currentLocation;
 
+  //assert transaction type
+  trxHelper.assertTransactionType(transaction_type);
   utils.validateRequiredFields({ amount });
 
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
+    transaction_type,
     location,
   });
 
@@ -127,13 +134,17 @@ exports.updatePayment = catchErrors(async (req, res) => {
   });
 });
 
-exports.removePayment = catchErrors(async (req, res) => {
+exports.deletePayment = catchErrors(async (req, res) => {
   // validate request
-  const { trx_id, payment_id } = req.params;
+  const { trx_id, payment_id, transaction_type } = req.params;
   const location = req.currentLocation;
+
+  //assert transaction type
+  trxHelper.assertTransactionType(transaction_type);
 
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
+    transaction_type,
     location,
   });
 

@@ -16,17 +16,15 @@ const {
   isExpiryDateConsidered,
 } = require("../utils/common");
 const { TRANSACTION_TYPES } = require("../constants/constants");
+const AppError = require("../utils/AppError");
 
 exports.getRecords = catchErrors(async (req, res) => {
   // validate request
   const { transaction_type } = req.params;
   const location = req.currentLocation;
 
-  appAssert(
-    TRANSACTION_TYPES.includes(transaction_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized transaction type"
-  );
+  //assert transaction type
+  trxHelper.assertTransactionType(transaction_type);
 
   const { q, cont, locs, start_date, end_date, payt_status } = req.query;
 
@@ -71,18 +69,19 @@ exports.getRecords = catchErrors(async (req, res) => {
   }
 
   //locations
-  const selected_locations = locs
-    ?.split(",")
-    ?.map((loc) => loc.trim()) //remove whitespace
-    ?.filter(Boolean) //remove empty values
-    || [] //if no selected location
+  const selected_locations =
+    locs
+      ?.split(",")
+      ?.map((loc) => loc.trim()) //remove whitespace
+      ?.filter(Boolean) || //remove empty values
+    []; //if no selected location
 
   // Initialize locations with the current selected location
   let locations = [new mongoose.Types.ObjectId(location)];
 
   // Only proceed if there are selected locations
   if (selected_locations.length) {
-    const user = await UserModel.findById(req.userId)
+    const user = await UserModel.findById(req.userId);
 
     // Get user's location IDs as a Set for faster lookups
     const usersLocationsIds = new Set(
@@ -186,13 +185,26 @@ exports.addRecord = catchErrors(async (req, res) => {
 
 exports.getRecord = catchErrors(async (req, res) => {
   // validate request
-  const { id } = req.params;
+  const { id, transaction_type } = req.params;
   const location = req.currentLocation;
+
+  //assert transaction type
+  trxHelper.assertTransactionType(transaction_type);
 
   const transaction = await TransactionModel.findOne({
     _id: id,
+    transaction_type,
     location,
-  });
+  }).populate([
+    {
+      path: "created_by",
+      select: "first_name last_name",
+    },
+    {
+      path: "updated_by",
+      select: "first_name last_name",
+    },
+  ]);
 
   //assert transaction exist and user is allowd with his current trx location
   appAssert(
@@ -223,10 +235,12 @@ exports.getRecord = catchErrors(async (req, res) => {
 
 exports.updateGeneralTrxInfo = catchErrors(async (req, res) => {
   // validate request
-  const { id } = req.params;
+  const { id, transaction_type } = req.params;
   const { note, contact } = req.body;
   const updated_by = req.userId;
   const location = req.currentLocation;
+  //assert transaction type
+  trxHelper.assertTransactionType(transaction_type);
 
   const transaction = await TransactionModel.findOne({
     _id: id,
@@ -271,10 +285,13 @@ exports.updateGeneralTrxInfo = catchErrors(async (req, res) => {
 
 exports.deleteTrxProduct = catchErrors(async (req, res) => {
   // validate request
-
-  const { trx_item_id } = req.params;
+  const { trx_item_id, transaction_type } = req.params;
   const updated_by = req.userId;
   const location = req.currentLocation;
+
+  //assert transactio type
+  trxHelper.assertTransactionType(transaction_type);
+
 
   const single_trx = await TransactionProductModel.findById(trx_item_id);
   //assert selected contact exists & its correct contact type
@@ -287,6 +304,7 @@ exports.deleteTrxProduct = catchErrors(async (req, res) => {
   const transaction = await TransactionModel.findOne({
     _id: single_trx.transaction_id,
     location,
+    transaction_type,
   });
   appAssert(
     transaction,

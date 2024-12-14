@@ -5,9 +5,14 @@ const catchErrors = require("../utils/catchErrors");
 const { LOCATION_TYPES } = require("../constants/constants");
 const utils = require("../utils/utils");
 
-exports.index = catchErrors(async (req, res) => {
+exports.getLocations = catchErrors(async (req, res) => {
+  // validate request
+  const { location_type } = req.params;
+  assertLocationType(location_type);
+
   // call service
   const locations = await LocationModel.find({
+    location_type,
     deleted: false,
   }).populate([
     {
@@ -24,23 +29,11 @@ exports.index = catchErrors(async (req, res) => {
   return res.status(HTTP_STATUS.OK).json(locations);
 });
 
-exports.getLocations = catchErrors(async (req, res) => {
-  // validate request
-  const { location_type } = req.params;
-  appAssert(
-    LOCATION_TYPES.includes(location_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Location Type"
-  );
-
+exports.getLocationNames = catchErrors(async (req, res) => {
   // call service
   const locations = await LocationModel.find({
-    location_type,
     deleted: false,
-  }).populate({
-    path: "created_by",
-    select: "first_name last_name",
-  });
+  }).select("name");
 
   // return response
   return res.status(HTTP_STATUS.OK).json(locations);
@@ -49,11 +42,7 @@ exports.getLocations = catchErrors(async (req, res) => {
 exports.getLocation = catchErrors(async (req, res) => {
   // call service
   const { id, location_type } = req.params;
-  appAssert(
-    LOCATION_TYPES.includes(location_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Location Type"
-  );
+  assertLocationType(location_type);
 
   const location = await LocationModel.findOne({
     _id: id,
@@ -74,11 +63,7 @@ exports.addRecord = catchErrors(async (req, res) => {
   const created_by = req.userId;
 
   //assert location type
-  appAssert(
-    LOCATION_TYPES.includes(location_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Location Type"
-  );
+  assertLocationType(location_type);
 
   //assert required fields
   utils.validateRequiredFields({ name });
@@ -110,11 +95,7 @@ exports.updateRecord = catchErrors(async (req, res) => {
   const updated_by = req.userId;
 
   //assert location type
-  appAssert(
-    LOCATION_TYPES.includes(location_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Location Type"
-  );
+  assertLocationType(location_type);
 
   //assert required fields
   utils.validateRequiredFields({ name });
@@ -168,11 +149,7 @@ exports.updateRecord = catchErrors(async (req, res) => {
 exports.deleteRecord = catchErrors(async (req, res) => {
   // validate request
   const { location_type, id } = req.params;
-  appAssert(
-    LOCATION_TYPES.includes(location_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Location Type"
-  );
+  assertLocationType(location_type);
 
   const location = await LocationModel.findOne({ _id: id, deleted: false });
   //assert location exists
@@ -190,3 +167,12 @@ exports.deleteRecord = catchErrors(async (req, res) => {
     .status(HTTP_STATUS.OK)
     .json({ message: `${location_type} deleted Successfully` });
 });
+
+//HELPERS
+const assertLocationType = (location_type) => {
+  appAssert(
+    LOCATION_TYPES.includes(location_type),
+    HTTP_STATUS.BAD_REQUEST,
+    "Unrecognized Location Type"
+  );
+};

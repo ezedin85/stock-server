@@ -45,14 +45,18 @@ const ALL_PERMISSIONS = [
   //Notification
   { group: "Low Stock Notifications", crud_type: "READ", code_name: "can_get_low_stock_notifications", description: "can get low stock notifications",  },
 
+    //products
+    { group: "Product", crud_type: "CREATE", code_name: "can_create_products", description: "can create products",  },
+    { group: "Product", crud_type: "READ", code_name: "can_view_products", description: "can view products",  },
+    { group: "Product", crud_type: "UPDATE", code_name: "can_update_products", description: "can update products",  },
+    { group: "Product", crud_type: "DELETE", code_name: "can_delete_products", description: "can delete products",  },
+  
 
   //Product category
   { group: "Product Category", crud_type: "CREATE", code_name: "can_create_product_category", description: "can create product category",  },
   { group: "Product Category", crud_type: "READ", code_name: "can_view_product_category", description: "can view product category",  },
   { group: "Product Category", crud_type: "UPDATE", code_name: "can_update_product_category", description: "can update product category",  },
   { group: "Product Category", crud_type: "DELETE", code_name: "can_delete_product_category", description: "can delete product category",  },
-
-  
 
   //Product unit
   { group: "Product Unit", crud_type: "CREATE", code_name: "can_create_product_unit", description: "can create product unit",  },
@@ -91,12 +95,6 @@ const ALL_PERMISSIONS = [
    { group: "Transfer", crud_type: "READ", code_name: "can_view_transfers", description: "can view transfers",  },
    { group: "Transfer", crud_type: "UPDATE", code_name: "can_update_transfers", description: "can update transfers",  },
 
-  //products
-  { group: "Product", crud_type: "CREATE", code_name: "can_create_products", description: "can create products",  },
-  { group: "Product", crud_type: "READ", code_name: "can_view_products", description: "can view products",  },
-  { group: "Product", crud_type: "UPDATE", code_name: "can_update_products", description: "can update products",  },
-  { group: "Product", crud_type: "DELETE", code_name: "can_delete_products", description: "can delete products",  },
-
   //Purchase
   { group: "Purchase", crud_type: "CREATE", code_name: "can_create_purchase", description: "can create purchase",  },
   { group: "Purchase", crud_type: "READ", code_name: "can_view_purchase", description: "can view purchase",  },
@@ -119,12 +117,16 @@ const ALL_PERMISSIONS = [
   { group: "Stock Adjustment", crud_type: "UPDATE", code_name: "can_update_stock_adjustment", description: "can update stock adjustment",  },
   { group: "Stock Adjustment", crud_type: "DELETE", code_name: "can_delete_stock_adjustment", description: "can delete stock adjustment",  },
 
-  //Payments
-  { group: "Payment", crud_type: "CREATE", code_name: "can_add_payment", description: "can add payment",  },
-  { group: "Payment", crud_type: "READ", code_name: "can_manage_payments", description: "can manage payments",  },
-  { group: "Payment", crud_type: "UPDATE", code_name: "can_update_payments", description: "can update payments",  },
-  { group: "Payment", crud_type: "DELETE", code_name: "can_remove_payments", description: "can remove payments",  },
+  //Purchase Payments
+  { group: "Purchase Payment", crud_type: "CREATE", code_name: "can_add_purchase_payment", description: "can add purchase payment",  },
+  { group: "Purchase Payment", crud_type: "READ", code_name: "can_view_purchase_payments", description: "can view purchase payments",  },
+  { group: "Purchase Payment", crud_type: "UPDATE", code_name: "can_update_purchase_payments", description: "can update purchase payments",  },
+  { group: "Purchase Payment", crud_type: "DELETE", code_name: "can_delete_purchase_payments", description: "can delete purchase payments",  },
 
-
+    //Sale Payments
+    { group: "Sale Payment", crud_type: "CREATE", code_name: "can_add_sale_payment", description: "can add sale payment",  },
+    { group: "Sale Payment", crud_type: "READ", code_name: "can_view_sale_payments", description: "can view sale payments",  },
+    { group: "Sale Payment", crud_type: "UPDATE", code_name: "can_update_sale_payments", description: "can update sale payments",  },
+    { group: "Sale Payment", crud_type: "DELETE", code_name: "can_delete_sale_payments", description: "can delete sale payments",  },
 ];
 module.exports = { ALL_PERMISSIONS };

@@ -16,6 +16,17 @@ const {
   SETTING_ID,
 } = require("../constants/constants");
 const AppError = require("../utils/AppError");
+
+//Assert TRANSACTION TYPE
+const assertTransactionType = (transaction_type) => {
+  appAssert(
+    TRANSACTION_TYPES.includes(transaction_type),
+    HTTP_STATUS.BAD_REQUEST,
+    "Unrecognized Transaction Type"
+  );
+};
+
+
 /*
 
 
@@ -24,12 +35,8 @@ const validateTransaction = async (req, products) => {
   //get data
   const { transaction_type } = req.params;
   const { contact, note } = req.body;
-  //asser transaction type
-  appAssert(
-    TRANSACTION_TYPES.includes(transaction_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Location Type"
-  );
+  //assert transaction type
+  assertTransactionType(transaction_type)
 
   let contact_type = transaction_type == "purchase" ? "supplier" : "customer";
 
@@ -849,6 +856,7 @@ const applyNewStockOut = async ({
 };
 
 module.exports = {
+  assertTransactionType,
   validateTransaction,
   validateTrxProducts,
   savePurchasedProducts,

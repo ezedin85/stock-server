@@ -1,21 +1,56 @@
 const express = require("express");
 const {
   getRecords,
+  getProductNameList,
   getRecord,
   addRecord,
   updateRecord,
   deleteRecord,
 } = require("../controllers/product.controller");
 const { uploadProductImage } = require("../middlewares/multer");
+const { checkPermission } = require("../middlewares/authorize");
 
-// const { checkPermission } = require("../../middlewares/role_middleware");
+//PEMISSIONS
+const permissions = {
+  view: checkPermission("can_view_products"),
+  viewNames: checkPermission([
+    "can_create_transfers",
+    "can_update_transfers",
+    "can_create_sale",
+    "can_update_sale",
+    "can_create_purchase",
+    "can_update_purchase",
+    "can_create_stock_adjustment",
+    "can_update_stock_adjustment",
+  ]),
+  create: checkPermission("can_create_products"),
+  update: checkPermission("can_update_products"),
+  delete: checkPermission("can_delete_products"),
+};
 
 const router = express.Router();
 
-router.get("/", getRecords);
-router.get("/:id", getRecord);
-router.post("/create", uploadProductImage, addRecord);
-router.post("/update/:id", uploadProductImage, updateRecord);
-router.delete("/delete/:id", deleteRecord);
+//get list
+router.get("/", permissions.view, getRecords);
+
+// names for dropdown
+router.get("/name-list", permissions.viewNames, getProductNameList);
+
+//get one record
+router.get("/:id", permissions.view, getRecord);
+
+//create
+router.post("/create", uploadProductImage, permissions.create, addRecord);
+
+//update
+router.post(
+  "/update/:id",
+  uploadProductImage,
+  permissions.update,
+  updateRecord
+);
+
+//delete
+router.delete("/delete/:id", permissions.delete, deleteRecord);
 
 module.exports = router;

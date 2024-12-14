@@ -23,6 +23,17 @@ exports.getRecords = catchErrors(async (req, res) => {
   return res.status(HTTP_STATUS.OK).json(productCategories);
 });
 
+
+exports.getCategoryNames = catchErrors(async(req, res) => {
+    // call service
+    const productCategories = await ProductCategoryModel.find({
+      deleted: false,
+    }).select("name")
+  
+    // return response
+    return res.status(HTTP_STATUS.OK).json(productCategories);
+});
+
 exports.getRecord = catchErrors(async (req, res) => {
   // validate request
   const { id } = req.params;

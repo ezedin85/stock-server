@@ -19,6 +19,17 @@ exports.getRoles = catchErrors(async (req, res) => {
   return res.status(HTTP_STATUS.OK).json(roles);
 });
 
+
+exports.getNames = catchErrors(async (req, res) => {
+  // call service
+  const roles = await RoleModel.find({ deleted: false })
+    .select("role_name")
+
+  // return response
+  return res.status(HTTP_STATUS.OK).json(roles);
+});
+
+
 exports.getRole = catchErrors(async (req, res) => {
   // call service
   const { id } = req.params;
@@ -34,7 +45,7 @@ exports.getRole = catchErrors(async (req, res) => {
 
 exports.getPermissions = catchErrors(async (req, res) => {
   // call service
-  const permissions = await PermissionModel.find();
+  const permissions = await PermissionModel.find().sort("group");
 
   // return response
   return res.status(HTTP_STATUS.OK).json(permissions);

@@ -73,17 +73,17 @@ userSchema.methods.omitPassword = function () {
   return user;
 };
 
-userSchema.methods.omitStructure = function () {
-  const user = this.toObject();
-  const fieldsToOmit = [
-    'password', 'is_super_admin', 'created_by', 'updated_by', 
-    'deleted', 'deleted_by', 'role', 'is_active', "updatedAt"
-  ];
+// userSchema.methods.omitStructure = function () {
+//   const user = this.toObject();
+//   const fieldsToOmit = [
+//     'password', 'is_super_admin', 'created_by', 'updated_by', 
+//     'deleted', 'deleted_by',  'is_active', "updatedAt"
+//   ];
 
-  fieldsToOmit.forEach(field => delete user[field]);
+//   fieldsToOmit.forEach(field => delete user[field]);
 
-  return user;
-};
+//   return user;
+// };
 
 userSchema.statics.register = async function ({
   req,

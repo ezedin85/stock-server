@@ -8,11 +8,7 @@ const utils = require("../utils/utils");
 exports.getContacts = catchErrors(async (req, res) => {
   // validate request
   const { contact_type } = req.params;
-  appAssert(
-    CONTACT_TYPES.includes(contact_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Contact Type"
-  );
+  assertContactType(contact_type)
 
   // call service
   const contacts = await ContactModel.find({
@@ -33,14 +29,25 @@ exports.getContacts = catchErrors(async (req, res) => {
   return res.status(HTTP_STATUS.OK).json(contacts);
 });
 
+exports.getNames = catchErrors(async (req, res) => {
+  // validate request
+  const { contact_type } = req.params;
+  assertContactType(contact_type)
+
+  // call service
+  const contacts = await ContactModel.find({
+    contact_type,
+    deleted: false,
+  }).select("name")
+
+  // return response
+  return res.status(HTTP_STATUS.OK).json(contacts);
+});
+
 exports.getContact = catchErrors(async (req, res) => {
   // call service
   const { id, contact_type } = req.params;
-  appAssert(
-    CONTACT_TYPES.includes(contact_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Contact Type"
-  );
+  assertContactType(contact_type)
 
   const contact = await ContactModel.findOne({
     _id: id,
@@ -62,11 +69,8 @@ exports.addRecord = catchErrors(async (req, res) => {
   const created_by = req.userId;
 
   //assert contact type
-  appAssert(
-    CONTACT_TYPES.includes(contact_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Contact Type"
-  );
+  assertContactType(contact_type)
+
 
   //assert required fields
   utils.validateRequiredFields({ name });
@@ -109,11 +113,8 @@ exports.updateRecord = catchErrors(async (req, res) => {
   const updated_by = req.userId;
 
   // 1. Validate contact type
-  appAssert(
-    CONTACT_TYPES.includes(contact_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Invalid contact type provided."
-  );
+  assertContactType(contact_type)
+
 
   // 2. Validate required fields
   utils.validateRequiredFields({ name });
@@ -174,11 +175,7 @@ exports.updateRecord = catchErrors(async (req, res) => {
 exports.deleteRecord = catchErrors(async (req, res) => {
   // validate request
   const { contact_type, id } = req.params;
-  appAssert(
-    CONTACT_TYPES.includes(contact_type),
-    HTTP_STATUS.BAD_REQUEST,
-    "Unrecognized Contact Type"
-  );
+  assertContactType(contact_type)
 
   const contact = await ContactModel.findOne({ _id: id, deleted: false });
   //assert contact exists
@@ -196,3 +193,12 @@ exports.deleteRecord = catchErrors(async (req, res) => {
     .status(HTTP_STATUS.OK)
     .json({ message: `${contact_type} deleted Successfully` });
 });
+
+//HELPERS
+const assertContactType = (contact_type) => {
+  appAssert(
+    CONTACT_TYPES.includes(contact_type),
+    HTTP_STATUS.BAD_REQUEST,
+    "Unrecognized Contact Type"
+  );
+};
