@@ -33,9 +33,6 @@ const ALL_PERMISSIONS = [
   { group: "Own Profile", crud_type: "READ", code_name: "can_view_own_profile", description: "can view own profile",  },
   { group: "Own Profile", crud_type: "UPDATE", code_name: "can_change_own_profile", description: "can change own profile",  },
 
-  //own Password
-  { group: "Own Password", crud_type: "UPDATE", code_name: "can_change_own_password", description: "can change own password",  },
-
   //role 
   { group: "Role", crud_type: "CREATE", code_name: "can_create_roles", description: "can create roles",  },
   { group: "Role", crud_type: "READ", code_name: "can_view_roles", description: "can view roles",  },

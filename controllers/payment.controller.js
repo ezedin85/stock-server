@@ -13,7 +13,7 @@ exports.getTrxPayments = catchErrors(async (req, res) => {
 
   //assert transaction type
   trxHelper.assertTransactionType(transaction_type);
-
+  
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
     transaction_type,

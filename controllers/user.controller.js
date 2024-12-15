@@ -5,6 +5,7 @@ const utils = require("../utils/utils");
 const catchErrors = require("../utils/catchErrors");
 const mongoose = require("mongoose");
 const { ObjectId } = require("mongodb");
+const bcrypt = require("bcrypt");
 
 exports.index = catchErrors(async (req, res) => {
   // call service
@@ -35,20 +36,21 @@ exports.index = catchErrors(async (req, res) => {
 
 exports.getMe = catchErrors(async (req, res) => {
   // Fetch the user by their ID from the request object
-  const user = await UserModel.findById(req.userId).populate([
-    {
-      path: "locations.location",
-      select: "name",
-      match: { deleted: false },
-    },
-    {
-      path: "role",
-      select: "permissions",
-      populate: { path: "permissions", select: "code_name -_id" },
-    }
-  ]).select("first_name last_name phone locations role profileImg");
+  const user = await UserModel.findById(req.userId)
+    .populate([
+      {
+        path: "locations.location",
+        select: "name deleted",
+      },
+      {
+        path: "role",
+        select: "permissions",
+        populate: { path: "permissions", select: "code_name -_id" },
+      },
+    ])
+    .select("first_name last_name phone locations role profileImg");
 
-  user.locations = user.locations.filter((loc) => !loc.location.deleted);
+  user.locations = user.locations.filter((loc) => !loc?.location?.deleted);
 
   // Assert that the user exists, throw an error if not found
   appAssert(user, HTTP_STATUS.NOT_FOUND, "User not found");
@@ -115,10 +117,8 @@ exports.updateUser = catchErrors(async (req, res) => {
   // validate request
   const { id } = req.params;
   let { first_name, last_name, phone, role, locations, is_active } = req.body;
-  console.log({ locations });
 
   locations = JSON.parse(locations);
-  console.log(locations);
 
   //assert thier is no file upload error
   appAssert(
@@ -227,5 +227,149 @@ exports.deleteUser = catchErrors(async (req, res) => {
   // return response
   return res.status(HTTP_STATUS.OK).json({
     message: `${user.first_name}'s account has been successfully deleted.`,
+  });
+});
+
+exports.updateOwnProfile = catchErrors(async (req, res) => {
+  // validate request
+  let { first_name, last_name, phone } = req.body;
+
+  //assert thier is no file upload error
+  appAssert(
+    !req.fileValidationError,
+    HTTP_STATUS.BAD_REQUEST,
+    req.fileValidationError
+  );
+  const path = req.file?.path;
+
+  //assert required fields
+  utils.validateRequiredFields({
+    first_name,
+    phone,
+  });
+
+  //assert phone number is valid
+  appAssert(
+    utils.checkPhoneNumberValidity(phone),
+    HTTP_STATUS.BAD_REQUEST,
+    "Invalid Phone Number!"
+  );
+
+  //assert no other user is using the phone number
+  const prevUser = await UserModel.findOne({ phone, _id: { $ne: req.userId } });
+  appAssert(!prevUser, HTTP_STATUS.BAD_REQUEST, "phone number already in use!");
+
+  //find user
+  const user = await UserModel.findOne({ _id: req.userId });
+
+  // call service
+  //if there was profile profile Image and its updated, remove previous image
+  if (path && user.profileImg) {
+    utils.deleteFile(user.profileImg);
+  }
+
+  // call service
+  await UserModel.findByIdAndUpdate(
+    req.userId,
+    {
+      first_name,
+      last_name,
+      phone,
+      profileImg: path?.replace(/\\/g, "/"),
+      updated_by: req.userId,
+    },
+    {
+      new: true,
+      runValidators: true,
+    }
+  );
+
+  // return response
+  return res.status(HTTP_STATUS.OK).json({
+    message: `Profile updated successfully.`,
+  });
+});
+
+exports.changeLocation = catchErrors(async (req, res) => {
+  // validate request
+  const { id } = req.body;
+
+  //assert user has the location
+  const user = await UserModel.findById(req.userId).populate(
+    "locations.location"
+  );
+  //find user location ids
+  //check if user has access to send location and its not delted
+  const hasUserAccessToTheLocation = user.locations.some(
+    (loc) => !loc.location.deleted && loc.location._id.equals(id)
+  );
+
+  appAssert(
+    hasUserAccessToTheLocation,
+    HTTP_STATUS.BAD_REQUEST,
+    "Unable to change Location!"
+  );
+
+  // call service
+  //Update the current location
+  user.locations = user.locations.map((loc) => ({
+    ...loc,
+    isCurrent: loc.location._id.equals(id),
+  }));
+  await user.save();
+
+  const newCurrentLocation = user.locations.find(
+    (loc) => loc.isCurrent && !loc.location?.deleted
+  );
+
+  // return response
+  return res.status(HTTP_STATUS.OK).json({
+    newLocation: id,
+    message: `Success! You are now at ${newCurrentLocation.location.name} ${newCurrentLocation.location.location_type}.`,
+  });
+});
+
+exports.changeOwnPassword = catchErrors(async (req, res) => {
+  // validate request
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+
+  //assert password is atleast 6 characters!
+  appAssert(
+    newPassword.length >= 6,
+    HTTP_STATUS.BAD_REQUEST,
+    "Password length must be atleast 6 characters!"
+  );
+
+  //asser passwords match
+  appAssert(
+    newPassword === confirmPassword,
+    HTTP_STATUS.BAD_REQUEST,
+    "Passwords don't match!"
+  );
+
+  //find user
+  const user = await UserModel.findOne({ _id: req.userId, deleted: false });
+
+  const match = await bcrypt.compare(currentPassword, user.password);
+
+  //asser prev password matches
+  appAssert(
+    match,
+    HTTP_STATUS.BAD_REQUEST,
+    "The password you entered as a previous password is not correct"
+  );
+
+  // call service
+  //hash the password
+  const salt = await bcrypt.genSalt(10);
+  const hashedPwd = await bcrypt.hash(newPassword, salt);
+
+  user.password =hashedPwd;
+  user.updated_by = req.userId
+  await user.save()
+
+  // return response
+  return res.status(HTTP_STATUS.OK).json({
+    message: `Password changed successfully.`,
   });
 });

@@ -40,13 +40,13 @@ router.get("/name-list", permissions.viewNames, getProductNameList);
 router.get("/:id", permissions.view, getRecord);
 
 //create
-router.post("/create", uploadProductImage, permissions.create, addRecord);
+router.post("/create", permissions.create, uploadProductImage, addRecord);
 
 //update
 router.post(
   "/update/:id",
-  uploadProductImage,
   permissions.update,
+  uploadProductImage,
   updateRecord
 );
 

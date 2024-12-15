@@ -17,8 +17,8 @@ const permissions = {
     sale: "can_view_sale_payments",
   }),
   create: dynamicPermissionCheck("transaction_type", {
-    purchase: "can_add_purchase_payment",
-    sale: "can_add_sale_payment",
+    purchase: "can_add_purchase_payments",
+    sale: "can_add_sale_payments",
   }),
   update: dynamicPermissionCheck("transaction_type", {
     purchase: "can_update_purchase_payments",

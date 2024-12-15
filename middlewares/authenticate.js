@@ -7,6 +7,7 @@ const UserModel = require("../models/user.model");
 const SessionModel = require("../models/session.model");
 const LocationModel = require("../models/location.model");
 const { clearAuthCookies } = require("../utils/cookies");
+const AppError = require("../utils/AppError");
 
 // wrap with catchErrors() if you need this to be async
 const authenticate = catchErrors(async (req, res, next) => {
@@ -49,22 +50,19 @@ const authenticate = catchErrors(async (req, res, next) => {
 
   //compare user's sent location with actual current location
   const locationInSync = actualCurrentLoc?.equals(userCurrentLocId);
-  
+
   const location = await LocationModel.findOne({
     _id: actualCurrentLoc,
     deleted: false,
   });
 
-
-  // Verify that the current location exists, has not been deleted, 
+  // Verify that the current location exists, has not been deleted,
   // and is properly synchronized with the location the user is viewing.
   if (!location || !locationInSync) {
     await SessionModel.findByIdAndDelete(payload.sessionId); //remove current session
     clearAuthCookies(res); //clear cookies
 
-    //we can call AppError here, but appAssert is used for consistnecy
-    appAssert(
-      false,
+    throw new AppError(
       HTTP_STATUS.UNAUTHORIZED,
       "The previous request could not be completed. because your location has been changed or not been found.",
       AppErrorCode.LOCATION_CHANGED
@@ -72,7 +70,7 @@ const authenticate = catchErrors(async (req, res, next) => {
   }
 
   req.userId = payload.userId;
-  req.currentLocation = actualCurrentLoc
+  req.currentLocation = actualCurrentLoc;
   req.sessionId = payload.sessionId;
   next();
 });

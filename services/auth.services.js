@@ -1,8 +1,6 @@
 const SessionModel = require("../models/session.model");
-const LocationModel = require("../models/location.model");
 const UserModel = require("../models/user.model");
 const appAssert = require("../utils/appAssert");
-const { fiveMinutesFromNow, oneDayFromNow } = require("../utils/date");
 const HTTP_STATUS = require("../constants/http");
 const {
   refreshTokenSignOptions,
@@ -47,7 +45,6 @@ const loginUser = async ({ phone, password, userAgent }) => {
     (loc) => loc.isCurrent && !loc.location?.deleted
   );
 
-  console.log({ currentLocationEntry });
   if (!currentLocationEntry) {
     // Step 4: Find another location to set as current
     const newCurrentLocationEntry = user.locations.find(
