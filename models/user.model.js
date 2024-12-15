@@ -46,7 +46,7 @@ const userSchema = new mongoose.Schema(
       // required: [true, "Role is required"],
     },
     profileImg: String,
-    socketId: String,
+    socketIds: [String],
     deleted: { type: Boolean, default: false },
     created_by: {
       type: mongoose.Schema.Types.ObjectId,

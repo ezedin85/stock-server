@@ -23,6 +23,7 @@ exports.index = catchErrors(async (req, res) => {
       {
         path: "locations.location",
         select: "name",
+        match: {deleted: false}
       },
       {
         path: "role",
