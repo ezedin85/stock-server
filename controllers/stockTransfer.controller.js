@@ -98,7 +98,12 @@ exports.getRecord = catchErrors(async (req, res) => {
 
   const transferProducts = await TransferProductModel.find({
     transfer_id: transfer._id,
-  }).populate({ path: "product", select: "name image" });
+  }).populate([
+    { path: "product", select: "name image unit" ,
+      populate: { path: "unit", select: "code" } 
+
+    },
+  ]);
 
   // return response
   return res
@@ -236,7 +241,6 @@ exports.receiveProduct = catchErrors(async (req, res) => {
   });
 
   return res
-  .status(HTTP_STATUS.OK)
-  .json({ message: `${quantity} Item(s) Received Successfully` });
+    .status(HTTP_STATUS.OK)
+    .json({ message: `${quantity} Item(s) Received Successfully` });
 });
-

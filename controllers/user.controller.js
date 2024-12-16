@@ -23,7 +23,7 @@ exports.index = catchErrors(async (req, res) => {
       {
         path: "locations.location",
         select: "name",
-        match: {deleted: false}
+        match: { deleted: false },
       },
       {
         path: "role",
@@ -365,9 +365,53 @@ exports.changeOwnPassword = catchErrors(async (req, res) => {
   const salt = await bcrypt.genSalt(10);
   const hashedPwd = await bcrypt.hash(newPassword, salt);
 
-  user.password =hashedPwd;
-  user.updated_by = req.userId
-  await user.save()
+  user.password = hashedPwd;
+  user.updated_by = req.userId;
+  await user.save();
+
+  // return response
+  return res.status(HTTP_STATUS.OK).json({
+    message: `Password changed successfully.`,
+  });
+});
+
+exports.changeUserPassword = catchErrors(async (req, res) => {
+  // validate request
+  const { newPassword, confirmPassword } = req.body;
+  console.log(req.body);
+  
+  const { id } = req.params;
+
+  //assert password is atleast 6 characters!
+  appAssert(
+    newPassword.length >= 6,
+    HTTP_STATUS.BAD_REQUEST,
+    "Password length must be atleast 6 characters!"
+  );
+
+  //asser passwords match
+  appAssert(
+    newPassword === confirmPassword,
+    HTTP_STATUS.BAD_REQUEST,
+    "Passwords don't match!"
+  );
+
+  const user = await UserModel.findOne({ _id: id, deleted: false });
+  //assert user exists
+  appAssert(
+    user,
+    HTTP_STATUS.NOT_FOUND,
+    "User not found!"
+  );
+
+  // call service
+
+  const salt = await bcrypt.genSalt(10);
+  const hashedPwd = await bcrypt.hash(newPassword, salt);
+
+  user.password = hashedPwd;
+  user.updated_by = req.userId;
+  await user.save();
 
   // return response
   return res.status(HTTP_STATUS.OK).json({

@@ -8,7 +8,8 @@ const {
   deleteUser,
   updateOwnProfile,
   changeLocation,
-  changeOwnPassword
+  changeOwnPassword,
+  changeUserPassword
 } = require("../controllers/user.controller");
 const { uploadProfilePhoto } = require("../middlewares/multer");
 const { checkPermission } = require("../middlewares/authorize");
@@ -22,6 +23,7 @@ const permissions = {
   delete: checkPermission("can_delete_user"),
   changeLocation: checkPermission("can_view_own_profile"),
   updateOwnProfile: checkPermission("can_change_own_profile"),
+  changeUserPassword: checkPermission("can_change_users_password"),
 };
 
 const router = Router();
@@ -52,6 +54,12 @@ router
     changeOwnPassword
   )
 
-  .post("/change-location", permissions.changeLocation, changeLocation);
+  .post("/change-location", permissions.changeLocation, changeLocation)
 
+  .post(
+    "/change-password/:id",
+    permissions.changeUserPassword,
+    changeUserPassword
+  );
+  
 module.exports = router;
