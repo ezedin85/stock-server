@@ -7,12 +7,23 @@ const fs = require("fs");
 const deleteFile = (imagePath) => {
   const fullPath = path.join(process.cwd(), imagePath);
 
-  fs.unlink(fullPath, (err) => {
-    if (err) {
-      console.error(`Error deleting the file: ${err.message}`);
+  fs.access(fullPath, fs.constants.F_OK, (accessErr) => {
+    if (accessErr) {
+      console.log(
+        `🔻File not found: ${imagePath}. It may have already been deleted.`
+      );
       return;
     }
-    console.log(`File ${imagePath} was deleted successfully`);
+
+    fs.unlink(fullPath, (unlinkErr) => {
+      if (unlinkErr) {
+        console.log(
+          `🔻Failed to delete file: ${imagePath}. Error: ${unlinkErr.message}`
+        );
+        return;
+      }
+      console.log(`🔹File ${imagePath} was deleted successfully`);
+    });
   });
 };
 
@@ -36,6 +47,8 @@ const hasDuplicates = (arr) => {
   return new Set(arr).size !== arr.length;
 };
 
+const normalize = (value) => (value === "null" || value === "" ? null : value);
+
 const isValidDate = (date) => {
   return date instanceof Date && !isNaN(date);
 };
@@ -58,4 +71,5 @@ module.exports = {
   hasDuplicates,
   isValidDate,
   validateRequiredFields,
+  normalize,
 };

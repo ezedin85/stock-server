@@ -18,3 +18,4 @@ exports.TELEGRAM_NOTIFICATION_TYPES = [
   "LOW_STOCK_ALERT",
   "DAILY_REPORT",
 ];
+exports.MAX_IMG_SIZE =  2 * 1024 * 1024 // 2MB file size limit

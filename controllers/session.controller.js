@@ -2,10 +2,9 @@ const SessionModel = require("../models/session.model");
 const catchErrors = require("../utils/catchErrors");
 const appAssert = require("../utils/appAssert");
 const HTTP_STATUS = require("../constants/http");
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 
 const getSessionsHandler = catchErrors(async (req, res) => {
-  
   const sessions = await SessionModel.find(
     {
       userId: req.userId,
@@ -13,13 +12,18 @@ const getSessionsHandler = catchErrors(async (req, res) => {
     },
     {
       _id: 1,
-      userAgent: 1,
+      // userAgent: 1,
       createdAt: 1,
+      device: 1,
+      browser: 1,
+      os: 1,
     },
     {
       sort: { createdAt: -1 },
     }
   );
+
+  console.log(sessions);
 
   return res.status(HTTP_STATUS.OK).json(
     sessions.map((session) => ({

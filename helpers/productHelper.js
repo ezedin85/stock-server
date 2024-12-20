@@ -3,8 +3,8 @@ const mongoose = require("mongoose");
 const { isExpiryDateConsidered } = require("../utils/common");
 
 const getProductsList = async ({
-  start,
-  length,
+  page,
+  show,
   locations,
   filters,
   stock_filter,
@@ -12,16 +12,20 @@ const getProductsList = async ({
   can_create_purchase,
   can_create_sale,
 }) => {
+  const pageNumber = parseInt(page);
+  const parsedLength = parseInt(show);
+  const limit = isNaN(parsedLength) || parsedLength > 100 ? 10 : parsedLength; //prevent more than 0
+
   const today = new Date(); // Current date to check expiry date
 
   //check if expiry date is being considered
-  const is_expiry_date_considered = await isExpiryDateConsidered()
+  const is_expiry_date_considered = await isExpiryDateConsidered();
 
-  //returns an id for groupping 
+  //returns an id for groupping
   const isExpiredCondition = is_expiry_date_considered
     ? {
         $cond: [
-        //first argument of $cond is if statment
+          //first argument of $cond is if statment
           {
             $or: [
               { $eq: ["$expiry_date", null] }, // No expiry date
@@ -61,7 +65,7 @@ const getProductsList = async ({
             $group: {
               //group batches by expired and non expired
               _id: {
-                isExpired: isExpiredCondition,  // Conditional 'isExpired' based on settings,
+                isExpired: isExpiredCondition, // Conditional 'isExpired' based on settings,
               },
               quantity: { $sum: "$quantity_in_stock" },
               estimated_value: { $sum: "$batch_value" },
@@ -220,6 +224,7 @@ const getProductsList = async ({
               sku: 1,
               createdAt: 1,
               updatedAt: 1,
+              description: 1,
               created_by: { _id: 1, first_name: 1, last_name: 1 },
               updated_by: { _id: 1, first_name: 1, last_name: 1 },
               unit: { _id: 1, code: 1 },
@@ -227,8 +232,8 @@ const getProductsList = async ({
             },
           },
           { $sort: { name: 1 } },
-          { $skip: parseInt(start, 10) },
-          { $limit: parseInt(length, 10) },
+          { $skip: (pageNumber - 1) * limit },
+          { $limit: limit },
         ],
         // Second facet for the total count of records (before skip and limit)
         recordsFiltered: [
@@ -252,4 +257,4 @@ const getProductsList = async ({
   return result[0];
 };
 
-module.exports = {getProductsList}
+module.exports = { getProductsList };

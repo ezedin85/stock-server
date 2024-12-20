@@ -181,6 +181,7 @@ exports.deleteRecord = catchErrors(async (req, res) => {
   //assert contact exists
   appAssert(contact, HTTP_STATUS.BAD_REQUEST, "Contact not found!");
 
+  
   // call service
   const milliseconds_now = Date.now(); //add unique, if item gets deleted many times
   contact.name = `_${contact.name}_${milliseconds_now}`;

@@ -14,7 +14,7 @@ const { checkPermission } = require("../middlewares/authorize");
 const permissions = {
   view: checkPermission("can_view_roles"),
   viewNames: checkPermission(["can_create_user", "can_update_user"]),
-  viewPermissions: checkPermission(["can_view_roles", "can_update_roles"]),
+  viewPermissions: checkPermission(["can_create_roles", "can_update_roles"]),
   create: checkPermission("can_create_roles"),
   update: checkPermission("can_update_roles"),
   delete: checkPermission("can_delete_roles"),
@@ -25,7 +25,7 @@ const router = express.Router();
 router
   .get("/", permissions.view, getRoles)
 
-  .get("/", permissions.viewNames, getNames)
+  .get("/name-list", permissions.viewNames, getNames)
 
   .get("/detail/:id", permissions.view, getRole)
   

@@ -42,7 +42,7 @@ exports.getRecord = catchErrors(async (req, res) => {
   const productCategory = await ProductCategoryModel.findOne({
     _id: id,
     deleted: false,
-  });
+  }).select("name");
 
   //assert record exists
   appAssert(productCategory, HTTP_STATUS.NOT_FOUND, `Record not found`);

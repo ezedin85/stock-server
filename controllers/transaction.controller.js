@@ -20,19 +20,22 @@ const AppError = require("../utils/AppError");
 
 exports.getRecords = catchErrors(async (req, res) => {
   // validate request
+  const { q, page, show, contact, locs, payt_status } = req.query;
+  //prevent "null" or empty strings
+  const start_date = utils.normalize(req.query.start_date);
+  const end_date = utils.normalize(req.query.end_date);
   const { transaction_type } = req.params;
   const location = req.currentLocation;
+
 
   //assert transaction type
   trxHelper.assertTransactionType(transaction_type);
 
-  const { q, cont, locs, start_date, end_date, payt_status } = req.query;
-
+  
   let filters = {};
-
   //contact filter
-  if (mongoose.Types.ObjectId.isValid(cont)) {
-    filters.contact = new mongoose.Types.ObjectId(selected_contact);
+  if (mongoose.Types.ObjectId.isValid(contact)) {
+    filters.contact = new mongoose.Types.ObjectId(contact);
   }
   //date filter
   if (start_date && end_date) {
@@ -85,7 +88,7 @@ exports.getRecords = catchErrors(async (req, res) => {
 
     // Get user's location IDs as a Set for faster lookups
     const usersLocationsIds = new Set(
-      user.locations.map((item) => item._id?.toString())
+      user.locations.map((item) => item?.location._id?.toString())
     );
 
     // Filter and convert selected locations to ObjectId, then push them to the locations array
@@ -96,7 +99,7 @@ exports.getRecords = catchErrors(async (req, res) => {
 
   // call service
   const {
-    data,
+    data: transactions,
     recordsFiltered = 0,
     grand_total_amount,
     grand_total_paid,
@@ -105,10 +108,8 @@ exports.getRecords = catchErrors(async (req, res) => {
     locations,
     filters,
     payment_filter,
-    start: 0,
-    length: 100,
-    // start: s,
-    // length: l,
+    page,
+    show,
   });
 
   // Count the total number of transactions based on the provided locations and transaction type
@@ -119,7 +120,7 @@ exports.getRecords = catchErrors(async (req, res) => {
 
   // return response
   return res.status(HTTP_STATUS.OK).json({
-    data,
+    transactions,
     recordsTotal,
     recordsFiltered,
     transaction_type,
@@ -291,7 +292,6 @@ exports.deleteTrxProduct = catchErrors(async (req, res) => {
 
   //assert transactio type
   trxHelper.assertTransactionType(transaction_type);
-
 
   const single_trx = await TransactionProductModel.findById(trx_item_id);
   //assert selected contact exists & its correct contact type

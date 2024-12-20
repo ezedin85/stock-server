@@ -26,7 +26,6 @@ const assertTransactionType = (transaction_type) => {
   );
 };
 
-
 /*
 
 
@@ -36,7 +35,7 @@ const validateTransaction = async (req, products) => {
   const { transaction_type } = req.params;
   const { contact, note } = req.body;
   //assert transaction type
-  assertTransactionType(transaction_type)
+  assertTransactionType(transaction_type);
 
   let contact_type = transaction_type == "purchase" ? "supplier" : "customer";
 
@@ -404,9 +403,13 @@ async function getTransactions({
   filters,
   payment_filter,
   locations,
-  start,
-  length,
+  page,
+  show,
 }) {
+  const pageNumber = parseInt(page);
+  const parsedLength = parseInt(show);
+  const limit = isNaN(parsedLength) || parsedLength > 100 ? 10 : parsedLength; //prevent more than 0
+
   try {
     const transactions = await TransactionModel.aggregate([
       {
@@ -604,8 +607,8 @@ async function getTransactions({
               },
             },
             { $sort: { createdAt: -1 } },
-            { $skip: parseInt(start, 10) },
-            { $limit: parseInt(length, 10) },
+            { $skip: (pageNumber - 1) * limit },
+            { $limit: limit },
           ],
           // Second facet for the total count of records (before skip and limit)
           recordsFiltered: [
@@ -865,5 +868,5 @@ module.exports = {
   applyReturn,
   applyNewStockOut,
   purchaseProduct,
-  saleProduct
+  saleProduct,
 };

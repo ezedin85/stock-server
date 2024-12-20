@@ -2,7 +2,7 @@
 const {program} = require('commander');
 const { prompt } = require('inquirer');
 const {
-  createSuperAdminUser,createPermission,updatePermissions,
+  initialize,createSuperAdminUser,createPermission,updatePermissions,
 } = require('./index');
 
 // Customer Questions
@@ -36,6 +36,12 @@ program
   .alias('v')
   .description('Clizle Technologies CLI')
  
+  program
+.command('initialize')
+.alias('init')
+.description('Initialize')
+.action(() => initialize());
+
 // Add SuperUser Command
 program
   .command('createsuperuser')

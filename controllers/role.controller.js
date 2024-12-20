@@ -8,11 +8,14 @@ const utils = require("../utils/utils");
 exports.getRoles = catchErrors(async (req, res) => {
   // call service
   const roles = await RoleModel.find({ deleted: false })
-    .populate({
+    .populate([{
       path: "created_by",
       select: "first_name last_name",
-    })
-    .select("role_name created_by createdAt updatedAt permissions")
+    },{
+      path: "updated_by",
+      select: "first_name last_name",
+    }])
+    .select("role_name created_by createdAt updatedAt updated_by permissions")
     .sort("-createdAt");
 
   // return response
@@ -35,7 +38,7 @@ exports.getRole = catchErrors(async (req, res) => {
   const { id } = req.params;
   const role = await RoleModel.findOne({ _id: id, deleted: false }).select(
     "role_name permissions"
-  );
+  )
 
   appAssert(role, HTTP_STATUS.BAD_REQUEST, "Role not found!");
 
@@ -55,9 +58,10 @@ exports.createRole = catchErrors(async (req, res) => {
   // validate request
   const { roleName, permissions } = req.body;
 
-  //assert role name
+  //1.1 assert role name 
   utils.validateRequiredFields({ roleName });
 
+  //1.2 asset no name conflict
   const nameConflict = await RoleModel.findOne({ role_name: roleName });
   appAssert(
     !nameConflict,
@@ -87,6 +91,7 @@ exports.updateRole = catchErrors(async (req, res) => {
 
   role.role_name = roleName;
   role.permissions = permissions;
+  role.updated_by = req.userId;
   await role.save();
 
   // return response
@@ -103,8 +108,8 @@ exports.deleteRole = catchErrors(async(req, res) => {
   appAssert(role, HTTP_STATUS.BAD_REQUEST, "Role not found!");
 
   // call service
-  const milliseconds_now = Date.now(); //add unique, if item gets deleted many times
-
+  //2.1 mark role deleted
+  const milliseconds_now = Date.now(); 
   role.role_name = `_${role.role_name}_${milliseconds_now}`;
   role.deleted = true;
   role.deleted_by = req.userId;

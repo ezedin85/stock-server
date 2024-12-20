@@ -8,6 +8,15 @@ const sessionSchema = new mongoose.Schema({
     index: true, // Improves performance when querying by `userId`
   },
   userAgent: { type: String },
+  ip: String,
+  device: String,
+  browser: String,
+  os: String,
+  location: { 
+    city: String,
+    region: String,
+    country: String
+  },
   createdAt: {
     type: Date,
     required: true,

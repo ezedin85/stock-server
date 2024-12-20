@@ -9,7 +9,15 @@ const {
 } = require("../utils/jwt");
 const { compareValue } = require("../utils/bcrypt");
 
-const loginUser = async ({ phone, password, userAgent }) => {
+const loginUser = async ({
+  phone,
+  password,
+  userAgent,
+  ip,
+  device,
+  browser,
+  os,
+}) => {
   // Find user by phone
   const user = await UserModel.findOne({ phone }).populate(
     "locations.location"
@@ -52,27 +60,29 @@ const loginUser = async ({ phone, password, userAgent }) => {
     );
 
     //asser user has other undeleted locations
-    appAssert(newCurrentLocationEntry, HTTP_STATUS.BAD_REQUEST, "You have not been assigned to any location");
+    appAssert(
+      newCurrentLocationEntry,
+      HTTP_STATUS.BAD_REQUEST,
+      "You have not been assigned to any location"
+    );
 
     //Update the current location
-    user.locations = user.locations.map(loc => ({
+    user.locations = user.locations.map((loc) => ({
       ...loc,
-      isCurrent: loc.location._id.equals(newCurrentLocationEntry.location._id)
+      isCurrent: loc.location._id.equals(newCurrentLocationEntry.location._id),
     }));
 
-
     await user.save(); // Save the updated user
-
-    console.log(`🔴`);
-    console.log(user);
-    
   }
-
 
   // Create a session
   const session = await SessionModel.create({
     userId,
     userAgent,
+    ip,
+    device,
+    browser,
+    os,
   });
 
   // Define the session information to include in the refresh token

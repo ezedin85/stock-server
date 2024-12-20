@@ -41,7 +41,7 @@ exports.getRecord = catchErrors(async (req, res) => {
   const productUnit = await ProductUnitModel.findOne({
     _id: id,
     deleted: false,
-  });
+  }).select("name code");
 
   //assert record exists
   appAssert(productUnit, HTTP_STATUS.NOT_FOUND, `Record not found`);

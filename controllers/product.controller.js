@@ -9,10 +9,19 @@ const UserModel = require("../models/user.model");
 const { getProductsList } = require("../helpers/productHelper");
 
 exports.getProductNameList = catchErrors(async (req, res) => {
+  const query = req.query.query;
   // call service
   const products = await ProductModel.find({
+    $or: [
+      { name: new RegExp(query, "i") },
+      { sku: new RegExp(query, "i") },
+      { shelf: new RegExp(query, "i") },
+    ],
     deleted: false,
-  }).select("name")
+  })
+    .select("name sku")
+    .limit(10);
+
   // return response
   return res.status(HTTP_STATUS.OK).json(products);
 });
@@ -21,8 +30,8 @@ exports.getRecords = catchErrors(async (req, res) => {
   // validate request
   const {
     q, //search query
-    s, //start
-    l, //length
+    page, //page
+    show, //length
     locs, //locations
     stock_status,
     category,
@@ -51,17 +60,22 @@ exports.getRecords = catchErrors(async (req, res) => {
   // low stock amount filter
   let stock_filter = {};
   if (stock_status === "ls") {
+    //low stock
     // ls for low stock
     stock_filter = { $gte: ["$low_quantity", "$stock_amount"] };
+  } else if (stock_status === "hs") {
+    //has stock
+    stock_filter = { $gte: ["$stock_amount", 1] };
   }
 
   //locations
-  const selected_locations = locs
-    ?.split(",")
-    ?.map((loc) => loc.trim()) //remove whitespace
-    ?.filter(Boolean) //remove empty values
-    || [] //if no selected location
-    
+  const selected_locations =
+    locs
+      ?.split(",")
+      ?.map((loc) => loc.trim()) //remove whitespace
+      ?.filter(Boolean) || //remove empty values
+    []; //if no selected location
+
   // Initialize locations with the current selected location
   let locations = [new mongoose.Types.ObjectId(location)];
 
@@ -70,7 +84,7 @@ exports.getRecords = catchErrors(async (req, res) => {
     const user = await UserModel.findById(req.userId);
     // Get user's location IDs as a Set for faster lookups
     const usersLocationsIds = new Set(
-      user.locations.map((item) => item._id?.toString())
+      user.locations.map((item) => item?.location._id?.toString())
     );
 
     // Filter and convert selected locations to ObjectId, then push them to the locations array
@@ -79,31 +93,28 @@ exports.getRecords = catchErrors(async (req, res) => {
       .forEach((loc) => locations.push(new mongoose.Types.ObjectId(loc)));
   }
 
-  const userPermissions =
-    await hasPermissions(req, [
-      "can_view_company_reports",
-      "can_create_purchase",
-      "can_create_sale",
-    ]);
+  const userPermissions = await hasPermissions(req, [
+    "can_view_company_reports",
+    "can_create_purchase",
+    "can_create_sale",
+  ]);
 
   // call service
-  const { data, recordsFiltered = 0 } = await getProductsList({
-    // start: s,
-    // length: l,
-    start: 0,
-    length: 100,
+  const { data: products, recordsFiltered = 0 } = await getProductsList({
+    page,
+    show,
     locations,
     filters,
     stock_filter,
-    can_view_company_reports: userPermissions['can_view_company_reports'],
-    can_create_purchase: userPermissions['can_create_purchase'],
-    can_create_sale: userPermissions['can_create_sale'],
+    can_view_company_reports: userPermissions["can_view_company_reports"],
+    can_create_purchase: userPermissions["can_create_purchase"],
+    can_create_sale: userPermissions["can_create_sale"],
   });
   const recordsTotal = await ProductModel.countDocuments({});
 
   // return response
   return res.status(HTTP_STATUS.OK).json({
-    data,
+    products,
     recordsTotal,
     recordsFiltered,
   });
@@ -117,7 +128,9 @@ exports.getRecord = catchErrors(async (req, res) => {
   const product = await ProductModel.findOne({
     _id: id,
     deleted: false,
-  });
+  }).select(
+    "name sku image shelf unit category low_quantity buying_price selling_price does_expire description"
+  );
 
   //assert record exists
   appAssert(product, HTTP_STATUS.NOT_FOUND, `Record not found`);
@@ -128,37 +141,30 @@ exports.getRecord = catchErrors(async (req, res) => {
 
 exports.addRecord = catchErrors(async (req, res) => {
   //1, validate request
-
   //assert there is no file upload error
   appAssert(
     !req.fileValidationError,
     HTTP_STATUS.BAD_REQUEST,
     req.fileValidationError
   );
-  let {
-    name,
-    sku,
-    does_expire,
-    unit,
-    shelf,
-    category,
-    subcategory,
-    low_quantity,
-    description,
-  } = req.body;
-  const image = req.file?.filename;
-  const created_by = req.userId;
+  let { name, sku, does_expire, shelf, low_quantity, description } = req.body;
 
-  //assert required fields
-  utils.validateRequiredFields({ name, unit });
+  //1.1 avoid empty strings
+  const unit = utils.normalize(req.body?.unit);
+  const category = utils.normalize(req.body?.category);
+  const subcategory = utils.normalize(req.body?.subcategory);
 
-  //accept only numbers
+  //1.2 accept only numbers
   const buying_price = parseFloat(req.body?.buying_price) || null;
   const selling_price = parseFloat(req.body?.selling_price) || null;
 
-  //get expiry setting
-  const is_expiry_date_considered = await isExpiryDateConsidered();
+  const image = req.file?.filename;
+  const created_by = req.userId;
 
+  //1.3 assert required fields
+  utils.validateRequiredFields({ name, unit });
+
+  //1.4 assert no name or code conflict
   const existing_record = await ProductModel.findOne({
     $or: [
       { name: { $regex: new RegExp(`^${name}$`, "i") } },
@@ -166,12 +172,14 @@ exports.addRecord = catchErrors(async (req, res) => {
     ],
   });
 
-  //assert no name or code conflict
   appAssert(
     !existing_record,
     HTTP_STATUS.BAD_REQUEST,
     "Product with the same name or sku already exists!"
   );
+
+  // 1.5 Check if expiry date is enabled; if not, expiry date won't be saved.
+  const is_expiry_date_considered = await isExpiryDateConsidered();
 
   //2, call a service
   await ProductModel.create({
@@ -198,48 +206,36 @@ exports.addRecord = catchErrors(async (req, res) => {
 
 exports.updateRecord = catchErrors(async (req, res) => {
   //1, validate request
-  const { id } = req.params;
 
-  let {
-    name,
-    unit,
-    shelf,
-    category,
-    subcategory,
-    low_quantity,
-    sku,
-    description,
-    does_expire,
-  } = req.body;
-
-  const buying_price = parseFloat(req.body?.buying_price) || null;
-  const selling_price = parseFloat(req.body?.selling_price) || null;
-  const image = req.file?.filename;
-  const updated_by = req.userId;
-
-  //assert required fields
-  utils.validateRequiredFields({ name, unit });
-
-  //assert there is no file upload error
+  //1.1 assert there is no file upload error
   appAssert(
     !req.fileValidationError,
     HTTP_STATUS.BAD_REQUEST,
     req.fileValidationError
   );
 
-  //get expiry setting
-  const is_expiry_date_considered = await isExpiryDateConsidered();
-  let conditional_data = is_expiry_date_considered ? { does_expire } : {};
+  const { id } = req.params;
+  let { name, shelf, low_quantity, sku, description, does_expire } = req.body;
 
+  //1.2 avoid empty strings
+  const unit = utils.normalize(req.body?.unit);
+  const category = utils.normalize(req.body?.category);
+  const subcategory = utils.normalize(req.body?.subcategory);
+
+  //1.3 accept only numbers
+  const buying_price = parseFloat(req.body?.buying_price) || null;
+  const selling_price = parseFloat(req.body?.selling_price) || null;
+  const image = req.file?.filename;
+  const updated_by = req.userId;
+
+  //1.4 assert required fields
+  utils.validateRequiredFields({ name, unit });
+
+  //1.5 assert product exists
   const product = await ProductModel.findOne({ _id: id, deleted: false });
-  //assert product is found
   appAssert(product, HTTP_STATUS.NOT_FOUND, `Record not found!`);
 
-  //if there was Product image and now its updated, remove previous image
-  if (image && product.image) {
-    utils.deleteFile(`uploads/product-images/${product.image}`);
-  }
-
+  //1.6 assert no name or sku conflict
   const existing_record = await ProductModel.findOne({
     $or: [
       { name: { $regex: new RegExp(`^${name}$`, "i") } },
@@ -248,40 +244,52 @@ exports.updateRecord = catchErrors(async (req, res) => {
     _id: { $ne: id },
   });
 
-  //assert no name or sku conflict
   appAssert(
     !existing_record,
     HTTP_STATUS.BAD_REQUEST,
     "Product with the same name or sku already exists!"
   );
 
-  // call service
+  //2. call service
+  let updateQuery = {
+    name,
+    sku,
+    unit,
+    shelf,
+    image,
+    category,
+    subcategory,
+    low_quantity,
+    buying_price,
+    selling_price,
+    description,
+    updated_by,
+    does_expire,
+  };
 
-  const updatedRecord = await ProductModel.findByIdAndUpdate(
-    id,
-    {
-      name,
-      sku,
-      unit,
-      shelf,
-      image,
-      category,
-      subcategory,
-      low_quantity,
-      buying_price,
-      selling_price,
-      description,
-      updated_by,
-      ...conditional_data,
-    },
-    {
-      new: true,
-      runValidators: true,
-    }
-  );
+  // 1.6 if expiry date is not considered, don't update the 'does_expire' value
+  const is_expiry_date_considered = await isExpiryDateConsidered();
+  if (!is_expiry_date_considered) {
+    delete updateQuery.does_expire;
+  }
+
+  //2.1 update the product record
+  const updatedRecord = await ProductModel.findByIdAndUpdate(id, updateQuery, {
+    new: true,
+    runValidators: true,
+  });
 
   //assert record found and updated
-  appAssert(updatedRecord, HTTP_STATUS.BAD_REQUEST, "Unable to update the product. Please try again later.");
+  appAssert(
+    updatedRecord,
+    HTTP_STATUS.BAD_REQUEST,
+    "Unable to update the product. Please try again later."
+  );
+
+  // 2.2 If a product image exists and is being updated, delete the previous image.
+  if (image && product.image) {
+    utils.deleteFile(`uploads/product-images/${product.image}`);
+  }
 
   // return response
   return res
@@ -290,23 +298,24 @@ exports.updateRecord = catchErrors(async (req, res) => {
 });
 
 exports.deleteRecord = catchErrors(async (req, res) => {
-  // validate request
+  //1. validate request
   const { id } = req.params;
   const product = await ProductModel.findOne({
     _id: id,
     deleted: false,
   });
 
-  //assert record exists
+  //1.1 assert record exists
   appAssert(product, HTTP_STATUS.BAD_REQUEST, "Record not found!");
 
-  //if there was Product image, delete it
+  //2 call service
+  //2.1 if there is Product image, delete it
   if (product.image) {
     utils.deleteFile(`uploads/product-images/${product.image}`);
   }
-  // call service
-  const milliseconds_now = Date.now(); //add unique, if item gets deleted many times
 
+  //2.2 mark product as deleted
+  const milliseconds_now = Date.now();
   product.name = `_${product.name}_${milliseconds_now}`;
   product.sku = product.sku
     ? `_${product.sku}_${milliseconds_now}`

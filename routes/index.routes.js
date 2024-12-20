@@ -12,6 +12,7 @@ const transactionRoutes = require("./transaction.routes");
 const paymentRoutes = require("./payment.routes");
 const stockAdjustmentRoutes = require("./stockAdjustment.routes");
 const stockTransferRoutes = require("./stockTransfer.routes");
+const settingRoutes = require("./setting.routes");
 
 const authenticate = require("../middlewares/authenticate")
 
@@ -30,6 +31,7 @@ router.use("/transactions", authenticate, transactionRoutes);
 router.use("/payments", authenticate, paymentRoutes);
 router.use("/stock-adjustments", authenticate, stockAdjustmentRoutes);
 router.use("/stock-transfers", authenticate, stockTransferRoutes);
+router.use("/company-settings", authenticate, settingRoutes);
 
 
 module.exports = router;

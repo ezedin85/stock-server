@@ -8,11 +8,11 @@ const catchErrors = require("./utils/catchErrors");
 require("dotenv").config();
 const HTTP_STATUS = require("./constants/http");
 const routes = require("./routes/index.routes.js");
-const socketIO = require("socket.io");
-const {
-  onSocketConnected,
-  socketAuthMiddleware,
-} = require("./config/socket.js");
+// const socketIO = require("socket.io");
+// const {
+//   onSocketConnected,
+//   socketAuthMiddleware,
+// } = require("./config/socket.js");
 
 
 const app = express();

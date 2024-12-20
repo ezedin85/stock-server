@@ -14,14 +14,12 @@ const { checkPermission } = require("../middlewares/authorize");
 const permissions = {
   view: checkPermission("can_view_products"),
   viewNames: checkPermission([
-    "can_create_transfers",
-    "can_update_transfers",
     "can_create_sale",
     "can_update_sale",
     "can_create_purchase",
     "can_update_purchase",
+    "can_create_transfers",
     "can_create_stock_adjustment",
-    "can_update_stock_adjustment",
   ]),
   create: checkPermission("can_create_products"),
   update: checkPermission("can_update_products"),

@@ -6,6 +6,7 @@ const SettingSchema = mongoose.Schema(
     setting_id: {
       type: String,
       required: true,
+      unique: true,
     },
     trx_sequence: { type: Number, required: true, default: 0 },
     transfer_sequence: { type: Number, required: true, default: 0 },
@@ -22,6 +23,18 @@ const SettingSchema = mongoose.Schema(
       required: true,
       default: INVENTORY_METHODS[0],
     },
+    stock_alert_to: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    daily_report_to: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     created_by: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

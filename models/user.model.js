@@ -46,6 +46,7 @@ const userSchema = new mongoose.Schema(
       // required: [true, "Role is required"],
     },
     profileImg: String,
+    tgChatId: String,
     socketIds: [String],
     deleted: { type: Boolean, default: false },
     created_by: {
@@ -76,8 +77,8 @@ userSchema.methods.omitPassword = function () {
 // userSchema.methods.omitStructure = function () {
 //   const user = this.toObject();
 //   const fieldsToOmit = [
-//     'password', 'is_super_admin', 'created_by', 'updated_by', 
-//     'deleted', 'deleted_by',  'is_active', "updatedAt"
+//     'password', 'socketIds',
+//     'deleted', 'deleted_by',
 //   ];
 
 //   fieldsToOmit.forEach(field => delete user[field]);
@@ -89,6 +90,7 @@ userSchema.statics.register = async function ({
   req,
   first_name,
   last_name,
+  tgChatId,
   is_active,
   locations,
   phone,
@@ -96,7 +98,14 @@ userSchema.statics.register = async function ({
   confirm_password,
   role,
 }) {
-  //assert required fiedls
+  //1.1 assert there is no file upload error
+  appAssert(
+    !req.fileValidationError,
+    HTTP_STATUS.BAD_REQUEST,
+    req.fileValidationError
+  );
+
+  //1.2 assert required fiedls
   utils.validateRequiredFields({
     first_name,
     phone,
@@ -105,31 +114,25 @@ userSchema.statics.register = async function ({
     role,
   });
 
-  //assert there is no file upload error
-  appAssert(
-    !req.fileValidationError,
-    HTTP_STATUS.BAD_REQUEST,
-    req.fileValidationError
-  );
-
   //validate ids, preventing undefined
   locations = locations.filter((location_id) =>
     mongoose.Types.ObjectId.isValid(location_id)
   );
 
-  //assert atleast one location is selected
+  //1.3 assert atleast one location is selected
   appAssert(
     locations?.length >= 1,
     HTTP_STATUS.BAD_REQUEST,
     "Please assign at least one location."
   );
 
+  //set one location as current
   let formatted_locations = locations.map((location, idx) => ({
     location,
     isCurrent: idx === 0,
   }));
 
-  //assert phone number is valid
+  //1.4 assert phone number is valid
   appAssert(
     utils.checkPhoneNumberValidity(phone),
     HTTP_STATUS.BAD_REQUEST,
@@ -147,7 +150,7 @@ userSchema.statics.register = async function ({
     "Password length must be atleast 6 characters!"
   );
 
-  //asser passwords match
+  //assert passwords match
   appAssert(
     password === confirm_password,
     HTTP_STATUS.BAD_REQUEST,
@@ -162,6 +165,7 @@ userSchema.statics.register = async function ({
   await this.create({
     first_name,
     last_name,
+    tgChatId,
     phone,
     is_active,
     password: hashedPwd,

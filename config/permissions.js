@@ -1,7 +1,7 @@
 const ALL_PERMISSIONS = [
 
   // Settings
-  { group: "Settings", crud_type: "READ", code_name: "can_manage_company_settings", description: "can manage company settings",  },
+  { group: "Settings", crud_type: "READ", code_name: "can_view_company_settings", description: "can view company settings",  },
   { group: "Settings", crud_type: "UPDATE", code_name: "can_update_company_settings", description: "can update company settings",  },
 
   // Telegram Notified Users
@@ -63,10 +63,10 @@ const ALL_PERMISSIONS = [
 
 
   //Product subcategory
-  { group: "Product sub category", crud_type: "CREATE", code_name: "can_create_product_subcategory", description: "can create product subcategory",  },
-  { group: "Product sub category", crud_type: "READ", code_name: "can_view_product_subcategory", description: "can view product subcategory",  },
-  { group: "Product sub category", crud_type: "UPDATE", code_name: "can_update_product_subcategory", description: "can update product subcategory",  },
-  { group: "Product sub category", crud_type: "DELETE", code_name: "can_delete_product_subcategory", description: "can delete product subcategory",  },
+  // { group: "Product sub category", crud_type: "CREATE", code_name: "can_create_product_subcategory", description: "can create product subcategory",  },
+  // { group: "Product sub category", crud_type: "READ", code_name: "can_view_product_subcategory", description: "can view product subcategory",  },
+  // { group: "Product sub category", crud_type: "UPDATE", code_name: "can_update_product_subcategory", description: "can update product subcategory",  },
+  // { group: "Product sub category", crud_type: "DELETE", code_name: "can_delete_product_subcategory", description: "can delete product subcategory",  },
 
   //Warehouses
   { group: "Warehouses", crud_type: "CREATE", code_name: "can_create_warehouse", description: "can create warehouse",  },

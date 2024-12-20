@@ -167,38 +167,51 @@ const handleLowStockNotification = async ({ req, items }) => {
   try {
     for (const item of items) {
       const { product } = item;
-      const location = req.session.location;
+      const location = req.currentLocation;
 
       // Get the current stock balance for the product
       const stock_balance = await getStockBalance({
         product_id: product,
         location,
       });
+
       const current_product = await ProductModel.findById(product).populate(
         "unit"
       );
-      const location_data = await LocationModel.findById(location);
 
-      // Check if stock is below the low stock threshold
+      // if stock is below the low stock threshold
       if (current_product.low_quantity >= stock_balance) {
-        const notifiable_users = await findAdminsWithPermission(
-          "can_get_low_stock_notifications"
-        );
+
+        //Find Users to send stock alert
+        let settings = await SettingModel.findOne({ setting_id: SETTING_ID });
+        const stock_alert_to = settings.stock_alert_to;
+        const stock_alert_users = await UserModel.find({
+          _id: { $in: stock_alert_to },
+          "locations.location": location,
+          deleted: false,
+          is_active: true,
+        });
+
+        console.log({stock_alert_users});
+        const location_data = await LocationModel.findById(location);
+
+        // construct message
         let message = `${current_product.name} in ${location_data.location_type} ${location_data.name}  has reached a low inventory level. Only ${stock_balance} units left. Consider restocking to meet future demand.`;
         let telegramMessage = `<u><b><tg-emoji emoji-id="5368324170671202286"> ⚠️ </tg-emoji>LOW STOCK ALERT</b></u> \n\n<b>Product:</b> ${current_product.name}\n<b>${location_data.location_type}:</b> ${location_data.name}\n<b>Current Stock:</b> ${stock_balance} ${current_product.unit?.code}`;
+        let tgChatIds = stock_alert_users.map(user=>user.tgChatId)
 
         //send telegram notification
         await sendTelegramMessage({
           message: telegramMessage,
-          tg_notification_type: "LOW_STOCK_ALERT",
           imageUrl: `uploads/product-images/${current_product.image}`,
+          tgChatIds
         });
 
         //send in app notification
-        notifiable_users.forEach((notifiable_user) => {
+        stock_alert_users.forEach((notifiable_user) => {
           sendNotification({
             req,
-            notifiable_user,
+            notifiable_user: notifiable_user._id,
             title: "Low Stock Alert",
             message,
             type: stock_balance <= 0 ? "DANGER" : "WARNING",
@@ -217,19 +230,9 @@ const handleLowStockNotification = async ({ req, items }) => {
 
 const sendTelegramMessage = async ({
   message,
-  tg_notification_type,
   imageUrl,
+  tgChatIds  
 }) => {
-  let settings = await SettingModel.findOne({ setting_id: SETTING_ID });
-
-  //check if telegram user have permsisin to see the notification
-  const chat_ids = settings.telegram_notified_users
-    ?.filter(({ notification_types }) =>
-      notification_types?.some((type) =>
-        ["ALL", tg_notification_type].includes(type)
-      )
-    )
-    .map((user) => user.chat_id);
 
   if (imageUrl) {
     try {
@@ -237,10 +240,10 @@ const sendTelegramMessage = async ({
       await fs.promises.access(fullPath); //check if file exists, if it doesn't it throws error
       const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendPhoto`;
 
-      for (const chat_id of chat_ids) {
+      for (const tgChatId of tgChatIds) {
         //loop thorugh allowed users
         const form = new FormData();
-        form.append("chat_id", chat_id);
+        form.append("chat_id", tgChatId);
         form.append("parse_mode", "HTML");
         form.append("caption", message);
         form.append("photo", fs.createReadStream(fullPath));
@@ -262,10 +265,10 @@ const sendTelegramMessage = async ({
 
   const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`;
 
-  for (const chat_id of chat_ids) {
+  for (const tgChatId of tgChatIds) {
     axios
       .post(url, {
-        chat_id: chat_id,
+        chat_id: tgChatId,
         text: message,
         parse_mode: "HTML",
       })

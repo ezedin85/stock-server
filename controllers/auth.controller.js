@@ -1,3 +1,4 @@
+const UAParser = require('ua-parser-js');
 const catchErrors = require("../utils/catchErrors");
 const {
   loginUser,
@@ -20,13 +21,26 @@ const loginHandler = catchErrors(async (req, res) => {
   // validate request
   const { phone, password } = req.body;
   
+  // 1️⃣ Get IP
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+  // 2️⃣ Get Device, Browser, and OS
   const userAgent = req.headers["user-agent"];
+  const parser = new UAParser(userAgent);
+  const device = parser.getDevice()?.type || 'Desktop';
+  const browser = parser.getBrowser()?.name;
+  const os = parser.getOS()?.name;
+
 
   // call service
   const { user, accessToken, refreshToken } = await loginUser({
     phone,
     password,
     userAgent,
+    ip,
+    device,
+    browser,
+    os
   });
   
   const currentLocation = user.locations?.find((loc) => loc.isCurrent)?.location?._id;

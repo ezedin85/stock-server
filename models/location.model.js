@@ -9,7 +9,6 @@ const locationSchema = mongoose.Schema(
       unique: true,
       trim: true,
     },
-    // location: String,
     location_type: {
       type: String,
       enum: LOCATION_TYPES,

@@ -48,7 +48,7 @@ exports.getLocation = catchErrors(async (req, res) => {
     _id: id,
     location_type,
     deleted: false,
-  });
+  }).select("name location_type");
 
   appAssert(location, HTTP_STATUS.NOT_FOUND, `${location_type} not found`);
 

@@ -32,8 +32,8 @@ const permissions = {
     branch: "can_update_branch",
   }),
   delete: dynamicPermissionCheck("location_type", {
-    warehouse: "can_delete_branch",
-    branch: "can_delete_warehouse",
+    warehouse: "can_delete_warehouse",
+    branch: "can_delete_branch",
   }),
 };
 
