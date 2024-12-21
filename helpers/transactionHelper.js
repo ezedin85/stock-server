@@ -17,7 +17,7 @@ const {
 } = require("../constants/constants");
 const AppError = require("../utils/AppError");
 
-//Assert TRANSACTION TYPE
+//🟩 Assert transaction type
 const assertTransactionType = (transaction_type) => {
   appAssert(
     TRANSACTION_TYPES.includes(transaction_type),
@@ -26,23 +26,20 @@ const assertTransactionType = (transaction_type) => {
   );
 };
 
-/*
-
-
-🟩 Checkes transaction type, contact and its type and ensure there is a product in the trx */
-const validateTransaction = async (req, products) => {
-  //get data
+// 🟩 Checkes transaction type, & contact */
+const validateTransaction = async (req) => {
   const { transaction_type } = req.params;
-  const { contact, note } = req.body;
-  //assert transaction type
+  const { contact } = req.body;
+
+  //1. assert transaction type
   assertTransactionType(transaction_type);
 
   let contact_type = transaction_type == "purchase" ? "supplier" : "customer";
 
-  // validate inputs
+  //2. validate required fields
   appAssert(contact, HTTP_STATUS.BAD_REQUEST, `${contact_type} is required!`);
 
-  // Prevent selling to suppliers and purchasing from customers [contact type mismatch].
+  //3. (assert contact type) Prevent selling to suppliers and purchasing from customers [contact type mismatch].
   const expected_contact_type =
     transaction_type === "purchase" ? "supplier" : "customer";
 
@@ -51,19 +48,19 @@ const validateTransaction = async (req, products) => {
     contact_type: expected_contact_type,
     deleted: false,
   });
-  console.log(contact_data);
 
   appAssert(
     contact_data,
     HTTP_STATUS.BAD_REQUEST,
-    "Contact not found or contact type mismatch!"
+    `${contact_type} not found or contact type mismatch!`
   );
 
-  return { contact, note, transaction_type };
+  return { contact, transaction_type };
 };
 
+//🟩 validates trx Products
 const validateTrxProducts = (products, transaction_type) => {
-  //loop thorugh products & remove products without product, quantity or unit_price
+  //1. loop thorugh products & check product, unit_price and quantity exists
   products.forEach(({ product, quantity, unit_price }) => {
     const validations = [
       [product, "Please select a product for all entries."],
@@ -82,17 +79,17 @@ const validateTrxProducts = (products, transaction_type) => {
     );
   });
 
-  //ensure at least one product
+  //2. ensure at least one product is selected
   appAssert(
     products.length > 0,
     HTTP_STATUS.BAD_REQUEST,
     `You must select at least one valid product.`
   );
 
-  //ensure no duplicate product
+  //3. ensure no duplicate product
   let selectedProducts = products.map((item) => item.product);
   appAssert(
-    !utils.hasDuplicates(selectedProducts) > 0,
+    !utils.hasDuplicates(selectedProducts),
     HTTP_STATUS.BAD_REQUEST,
     `A product cannot be ${
       transaction_type == "purchase" ? "purchased" : "sold"
@@ -102,17 +99,21 @@ const validateTrxProducts = (products, transaction_type) => {
 
 //🟩  Returns Unique sequence based trxID
 const getTransactionId = async ({ transaction_type, session }) => {
+  //1. validate
+  //1.1 assert transaction type
+  assertTransactionType(transaction_type);
+
   const settings = await SettingModel.findOneAndUpdate(
     { setting_id: SETTING_ID },
     { $inc: { trx_sequence: 1 } },
     { new: true, session }
   );
 
-  // Assert settings document exists
+  //1.2 Assert settings document exists
   appAssert(
     settings,
     HTTP_STATUS.NOT_FOUND,
-    `Setting not found for transaction ID generation.!`
+    `Setting not found for transaction ID generation!`
   );
 
   let new_sequence = settings.trx_sequence;
@@ -130,10 +131,7 @@ const getTransactionId = async ({ transaction_type, session }) => {
   return trx_id;
 };
 
-/*
-
-saves purchased products :)
-🟩  */
+//🟩  saves purchased products
 const savePurchasedProducts = async ({
   location,
   contact,
@@ -148,13 +146,13 @@ const savePurchasedProducts = async ({
   session.startTransaction();
 
   try {
-    //get unique trx ID
+    //1. get unique trx ID
     const trx_id = await getTransactionId({
       transaction_type: "purchase",
       session,
     });
 
-    //save transaction
+    //2. save transaction
     const transaction = await TransactionModel.create(
       [
         {
@@ -169,7 +167,7 @@ const savePurchasedProducts = async ({
       { session }
     );
 
-    //iterate through to be purchased products and save them
+    //3. iterate through to be purchased products and save them
     for (const product of products) {
       await purchaseProduct({
         session,
@@ -201,7 +199,7 @@ const savePurchasedProducts = async ({
     await session.commitTransaction();
   } catch (error) {
     await session.abortTransaction();
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     session.endSession();
   }
@@ -217,16 +215,15 @@ async function purchaseProduct({
   expiry_date,
   transaction_id,
 }) {
-  let settings = await SettingModel.findOne({
-    setting_id: SETTING_ID,
-  }).session(session);
-  const is_expiry_date_considered = settings.is_expiry_date_considered;
+  //1. Get expiry date setting
+  const is_expiry_date_considered = await common.isExpiryDateConsidered();
 
+  //1. save batch
   let batch = await BatchModel.create(
     [
       {
-        product: product_id,
         location,
+        product: product_id,
         total_quantity: quantity,
         quantity_in_stock: quantity,
         unit_purchase_cost: unit_price,
@@ -258,18 +255,19 @@ async function purchaseProduct({
 async function saleProduct({
   location,
   session,
+  transaction_id,
   product_id,
   selling_quantity,
-  vat_percentage,
-  transaction_id,
   unit_price,
+  vat_percentage,
 }) {
   let batch_data_for_transaction = [];
 
-  // Retrieve batches with available stock and unexpired items, sorted by creation date (FIFO).
+  // Retrieve batches with available stock and unexpired items,
   const batches_with_available_stock = await common.getStockAvailableBatches({
     location,
     product_id,
+    session,
   });
 
   let total_sold = 0; // Tracks the total quantity sold for a single product across multiple batches
@@ -279,8 +277,8 @@ async function saleProduct({
       break;
     }
 
-    // Determine the quantity to sell from this batch as the smaller value between
-    // the stock available in the batch and the remaining quantity needed to fulfill the order
+    // Determine the quantity to deduct from the batch (minimum of available stock in the batch or
+    // remaining required quantity)
     let qty_to_sell_on_this_batch = Math.min(
       batch.quantity_in_stock,
       selling_quantity - total_sold
@@ -295,7 +293,7 @@ async function saleProduct({
     // Update the cumulative total quantity sold
     total_sold += qty_to_sell_on_this_batch;
 
-    // Deduct the quantity sold from the batch’s available stock in the inventory
+    // Reduce stock quantity
     await BatchModel.findByIdAndUpdate(
       batch._id,
       {
@@ -324,8 +322,8 @@ async function saleProduct({
 const saveSoldProducts = async ({
   location,
   contact,
-  note,
   products,
+  note,
   remark,
   paid_amount,
   created_by,
@@ -335,13 +333,13 @@ const saveSoldProducts = async ({
   session.startTransaction();
 
   try {
-    //get unique trx ID
+    //1. get unique trx ID
     const trx_id = await getTransactionId({
       transaction_type: "sale",
       session,
     });
 
-    //save transaction
+    //2. save transaction
     const transaction = await TransactionModel.create(
       [
         {
@@ -361,11 +359,11 @@ const saveSoldProducts = async ({
       await saleProduct({
         location,
         session,
+        transaction_id: transaction[0]?._id,
         product_id: product.product,
         selling_quantity: product.quantity,
-        vat_percentage: product.vat_percentage,
-        transaction_id: transaction[0]?._id,
         unit_price: product.unit_price,
+        vat_percentage: product.vat_percentage,
       });
     }
 
@@ -390,7 +388,7 @@ const saveSoldProducts = async ({
   } catch (error) {
     // If an error occurred, abort the transaction
     await session.abortTransaction();
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();
@@ -655,8 +653,8 @@ async function getTransactions({
 }
 
 async function applyReturn({
-  trx_id,
   location,
+  trx_id,
   trx_item_id,
   return_amt,
   unit_price,
@@ -667,33 +665,17 @@ async function applyReturn({
   session.startTransaction(); // Begin the transaction
 
   try {
-    const transaction = await TransactionModel.findOne({
-      _id: trx_id,
-      location,
-    }).session(session);
-
-    //assert transaction exists
-    appAssert(
-      transaction,
-      HTTP_STATUS.BAD_REQUEST,
-      "Selected sale not found at your current location."
+    //Records validated at parent level; no extra assertions needed.
+    const transaction = await TransactionModel.findById(trx_id).session(
+      session
     );
-
-    const single_trx = await TransactionProductModel.findOne({
-      _id: trx_item_id,
-      transaction_id: trx_id,
-    });
-    //assert transaction product exists
-    appAssert(
-      single_trx,
-      HTTP_STATUS.BAD_REQUEST,
-      "Selected Transaction Item not found"
-    );
+    const single_trx = await TransactionProductModel.findById(
+      trx_item_id
+    ).session(session);
 
     let remaining_return = return_amt;
 
-    // Loop through batches of this single trx in reverse order for (FIFO)
-    // we remove the last adjustment first b/c in FIFO, the first one is calculated first
+    //1. Loop backwards through batches, the last item out gets returned first (regardless of inventory method)
     for (
       let i = single_trx.batches?.length - 1;
       i >= 0 && remaining_return > 0;
@@ -701,12 +683,10 @@ async function applyReturn({
     ) {
       const batch = single_trx.batches[i];
 
-      // if the remainig return is greater than the batch quantity, remove this batch from this transaction
+      //2. If the remaining return is greater than or equal to the batch quantity,
+      // return the items to the batch and remove it from the transaction as there is no longer a connection
       if (remaining_return >= batch.quantity) {
-        // Subtract the quantity of the current batch from the remaining return amount.
-        remaining_return -= batch.quantity;
-
-        // return items to the batch
+        //2.1.1 return items to the batch
         await BatchModel.findOneAndUpdate(
           { _id: batch.batch, location },
           {
@@ -715,24 +695,27 @@ async function applyReturn({
           { session }
         );
 
-        // Remove this batch b/c the items taken are returned back to the batch
+        //2.1.2 Deduct the batch quantity from the remaining return amount
+        remaining_return -= batch.quantity;
+
+        //2.1.3 Remove the batch as the items have been fully returned
         single_trx.batches.splice(i, 1);
       } else {
-        //if only some of items taken from the batch are being returned, return back the returned amount
+        //2.2 If only a portion of the items from the batch are being returned, update the batch with the returned quantity
 
-        // deduct trx batch quantity
-        batch.quantity -= remaining_return;
-
-        // Update batch quantity for partial deduction
+        //2.2.1 Update batch quantity for partial return
         await BatchModel.findOneAndUpdate(
           { _id: batch.batch, location },
           {
-            $inc: { quantity_in_stock: remaining_return }, // return to the stock
+            $inc: { quantity_in_stock: remaining_return }, // return to stock
           },
           { session }
         );
 
-        remaining_return = 0; // Deduction is done
+        //2.2.2 deduct trx batch quantity
+        batch.quantity -= remaining_return;
+
+        remaining_return = 0; // Mark return as complete
       }
     }
 
@@ -749,7 +732,7 @@ async function applyReturn({
     return transaction;
   } catch (error) {
     await session.abortTransaction(); // Rollback the transaction in case of error
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();
@@ -757,44 +740,25 @@ async function applyReturn({
 }
 
 const applyNewStockOut = async ({
-  req,
+  location,
   trx_id,
   trx_item_id,
-  additional_deduct_amount,
+  additional_sale_amount,
   unit_price,
   vat_percentage,
   updated_by,
 }) => {
-  const session = await mongoose.startSession(); // Start a session
-  session.startTransaction(); // Begin the transaction
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
   try {
-    const location = req.currentLocation;
-
-    // Find the transaction by ID within the session
-    const transaction = await TransactionModel.findOne({
-      _id: trx_id,
-      location,
-    }).session(session);
-
-    //assert transaction exists
-    appAssert(
-      transaction,
-      HTTP_STATUS.BAD_REQUEST,
-      "Selected sale not found at your current location."
+    //Records validated at parent level; no extra assertions needed.
+    const transaction = await TransactionModel.findById(trx_id).session(
+      session
     );
-
-    const single_trx = await TransactionProductModel.findOne({
-      _id: trx_item_id,
-      transaction_id: trx_id,
-    });
-
-    //assert transaction product exists
-    appAssert(
-      single_trx,
-      HTTP_STATUS.BAD_REQUEST,
-      "Selected Transaction Item not found"
-    );
+    const single_trx = await TransactionProductModel.findById(
+      trx_item_id
+    ).session(session);
 
     let new_stockout_data = [];
 
@@ -802,42 +766,43 @@ const applyNewStockOut = async ({
     const batches_with_available_stock = await common.getStockAvailableBatches({
       location,
       product_id: single_trx.product,
+      session,
     });
 
-    let total_decreased = 0; // Tracks the total quantity decreased across multiple batches
+    let total_new_sold = 0; // Tracks the total new quantity sold across multiple batches
     for (const batch of batches_with_available_stock) {
-      // Stop processing if the required quantity has already been fulfilled
-      if (total_decreased >= additional_deduct_amount) {
+      // Exit if the required quantity has already been fulfilled
+      if (total_new_sold >= additional_sale_amount) {
         break;
       }
 
-      // Determine the quantity to deduct from this batch as the smaller value between
-      // the stock available in the batch and the remaining quantity needed to fulfill the order
-      let qty_to_decrease_from_this_batch = Math.min(
+      // Determine the quantity to deduct from the batch (minimum of available stock in the batch or
+      // remaining required quantity)
+      let qty_to_sale_from_this_batch = Math.min(
         batch.quantity_in_stock,
-        additional_deduct_amount - total_decreased
+        additional_sale_amount - total_new_sold
       );
 
       //data for adding in single trx data
       new_stockout_data.push({
         batch: batch._id,
-        quantity: qty_to_decrease_from_this_batch,
+        quantity: qty_to_sale_from_this_batch,
       });
 
-      // Update the cumulative total quantity sold
-      total_decreased += qty_to_decrease_from_this_batch;
+      // Update the total quantity sold
+      total_new_sold += qty_to_sale_from_this_batch;
 
-      // Deduct the quantity sold from the batch’s available stock in the inventory
+      // Reduce stock quantity
       await BatchModel.findOneAndUpdate(
         { _id: batch._id, location },
         {
-          $inc: { quantity_in_stock: -qty_to_decrease_from_this_batch },
+          $inc: { quantity_in_stock: -qty_to_sale_from_this_batch },
         },
         { session }
       );
     }
 
-    single_trx.batches?.push(...new_stockout_data);
+    single_trx.batches.push(...new_stockout_data);
     single_trx.unit_price = unit_price;
     single_trx.vat_percentage = vat_percentage;
     await single_trx.save({ session });
@@ -851,7 +816,7 @@ const applyNewStockOut = async ({
   } catch (error) {
     // If an error occurred, abort the transaction
     await session.abortTransaction();
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();

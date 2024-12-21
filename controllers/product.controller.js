@@ -147,19 +147,17 @@ exports.addRecord = catchErrors(async (req, res) => {
     HTTP_STATUS.BAD_REQUEST,
     req.fileValidationError
   );
-  let { name, sku, does_expire, shelf, low_quantity, description } = req.body;
+  let { name, sku, does_expire, shelf, low_quantity, description,buying_price,selling_price } = req.body;
 
   //1.1 avoid empty strings
   const unit = utils.normalize(req.body?.unit);
   const category = utils.normalize(req.body?.category);
   const subcategory = utils.normalize(req.body?.subcategory);
-
-  //1.2 accept only numbers
-  const buying_price = parseFloat(req.body?.buying_price) || null;
-  const selling_price = parseFloat(req.body?.selling_price) || null;
-
   const image = req.file?.filename;
   const created_by = req.userId;
+
+  //1.3 validate numeric fields, [no required field ] 👇
+  utils.validateNumberFields({buying_price, selling_price, low_quantity})
 
   //1.3 assert required fields
   utils.validateRequiredFields({ name, unit });
@@ -168,7 +166,7 @@ exports.addRecord = catchErrors(async (req, res) => {
   const existing_record = await ProductModel.findOne({
     $or: [
       { name: { $regex: new RegExp(`^${name}$`, "i") } },
-      { sku: { $regex: new RegExp(`^${sku}$`, "i") } },
+      { sku: { $regex: new RegExp(`^${sku}$`, "i"), $ne: null } },
     ],
   });
 
@@ -215,18 +213,17 @@ exports.updateRecord = catchErrors(async (req, res) => {
   );
 
   const { id } = req.params;
-  let { name, shelf, low_quantity, sku, description, does_expire } = req.body;
+  let { name, shelf, low_quantity, sku, description, does_expire,buying_price, selling_price } = req.body;
 
   //1.2 avoid empty strings
   const unit = utils.normalize(req.body?.unit);
   const category = utils.normalize(req.body?.category);
   const subcategory = utils.normalize(req.body?.subcategory);
-
-  //1.3 accept only numbers
-  const buying_price = parseFloat(req.body?.buying_price) || null;
-  const selling_price = parseFloat(req.body?.selling_price) || null;
   const image = req.file?.filename;
   const updated_by = req.userId;
+
+  //1.3 validate numeric fields, [no required field ] 👇
+  utils.validateNumberFields({buying_price, selling_price, low_quantity})
 
   //1.4 assert required fields
   utils.validateRequiredFields({ name, unit });
@@ -317,9 +314,7 @@ exports.deleteRecord = catchErrors(async (req, res) => {
   //2.2 mark product as deleted
   const milliseconds_now = Date.now();
   product.name = `_${product.name}_${milliseconds_now}`;
-  product.sku = product.sku
-    ? `_${product.sku}_${milliseconds_now}`
-    : product.sku;
+  product.sku = `_${product.sku}_${milliseconds_now}`;
   product.deleted = true;
   product.deleted_by = req.userId;
   await product.save();

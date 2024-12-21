@@ -13,23 +13,9 @@ exports.index = catchErrors(async (req, res) => {
   const users = await UserModel.find({ deleted: false })
     .select("-password -socketIds -deleted -deleted_by")
     .populate([
-      {
-        path: "created_by",
-        select: "first_name last_name",
-      },
-      {
-        path: "updated_by",
-        select: "first_name last_name",
-      },
-      {
-        path: "locations.location",
-        select: "name",
-        match: { deleted: false },
-      },
-      {
-        path: "role",
-        select: "role_name",
-      },
+      { path: "created_by updated_by", select: "first_name last_name" },
+      { path: "locations.location", select: "name", match: { deleted: false } },
+      { path: "role", select: "role_name" },
     ]);
 
   // return response
@@ -224,8 +210,8 @@ exports.updateUser = catchErrors(async (req, res) => {
     }
   );
 
-    // 2.2 If a new profile image is provided, delete the previous image from storage
-   if (path && user.profileImg) {
+  // 2.2 If a new profile image is provided, delete the previous image from storage
+  if (path && user.profileImg) {
     utils.deleteFile(user.profileImg);
   }
 
@@ -241,16 +227,14 @@ exports.deleteUser = catchErrors(async (req, res) => {
   const user = await UserModel.findOne({ _id: id, deleted: false });
   appAssert(user, HTTP_STATUS.BAD_REQUEST, "Account not found!");
 
-
   //2 call service
 
   //2.1 mark users acccount as deleted
-  const milliseconds_now = Date.now(); 
+  const milliseconds_now = Date.now();
   user.phone = `_${user.phone}_${milliseconds_now}`;
   user.deleted = true;
   user.deleted_by = req.userId;
   await user.save();
-
 
   // 2.2 If a user had profile image, delete the image.
   if (user.profileImg) {
@@ -292,10 +276,9 @@ exports.updateOwnProfile = catchErrors(async (req, res) => {
   const prevUser = await UserModel.findOne({ phone, _id: { $ne: req.userId } });
   appAssert(!prevUser, HTTP_STATUS.BAD_REQUEST, "phone number already in use!");
 
-
   //2 call service
   // 2.1 Retrieve the user's account to access existing data (e.g., profile image)
-  const user = await UserModel.findOne({ _id: req.userId }); 
+  const user = await UserModel.findOne({ _id: req.userId });
 
   //2.1 update users account
   await UserModel.findByIdAndUpdate(
@@ -388,12 +371,11 @@ exports.changeOwnPassword = catchErrors(async (req, res) => {
     "The password you entered as a previous password is not correct"
   );
 
-
   // assert new password is not as same as the old one
   appAssert(
     currentPassword !== newPassword,
     HTTP_STATUS.BAD_REQUEST,
-    "The new password must be different from the old one!" 
+    "The new password must be different from the old one!"
   );
 
   //2. call service

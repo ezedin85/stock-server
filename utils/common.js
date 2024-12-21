@@ -11,26 +11,28 @@ const { sendNotification } = require("../utils/socket");
 const BatchModel = require("../models/batch.model");
 const mongoose = require("mongoose");
 const axios = require("axios");
+const AppError = require("./AppError");
 
+// 🟩 Checks if the expiry date should be considered based on system settings
 const isExpiryDateConsidered = async () => {
-  //get expiry setting
+  // Retrieve expiry setting,
   let setting = await SettingModel.findOne({ setting_id: SETTING_ID });
-
-  //assert setting is found
+  // Assert the setting exists
   appAssert(setting, HTTP_STATUS.NOT_FOUND, `Setting not found!`);
 
+  // Return the is_expiry_date_considered flag
   return setting.is_expiry_date_considered;
 };
 
 //🟩 Returns Current Stock Balance of a product
 const getStockBalance = async ({ product_id, location }) => {
-  const today = new Date(); // Current date
-
-  let settings = await SettingModel.findOne({ setting_id: SETTING_ID });
-  // if expiry date is considered, return un expired batches, if not, return all
-  const is_expiry_date_considered = settings.is_expiry_date_considered;
   let expiry_date_query = {}; // Default to an empty object, no expiry date condition
+
+  // Checks if the expiry date should be considered
+  const is_expiry_date_considered = await isExpiryDateConsidered();
+
   if (is_expiry_date_considered) {
+    const today = new Date(); // Current date
     expiry_date_query = {
       $or: [
         { expiry_date: { $gt: today } }, // Batches with future expiry dates
@@ -55,26 +57,26 @@ const getStockBalance = async ({ product_id, location }) => {
     },
   ]);
 
-  // If there are no matching documents, result will be an empty array
-  const total_in_stock = result.length > 0 ? result[0].stock_balance : 0;
+  const total_in_stock = Math.max(0, Number(result?.[0]?.stock_balance) || 0);
 
   return total_in_stock;
 };
 
 //🟩 Function to check stock availability before processing a stock out
 const checkStockAvailability = async ({ location, items }) => {
-  if (!items || items.length === 0) {
+  //1. assert products are provided
+  if (!items || items.length < 1) {
     return {
       can_proceed: false,
       stock_error: "No items provided to check stock availability.",
     };
   }
 
-  // Iterate through each item
+  //2. Iterate through each item
   for (const item of items) {
     const { product, quantity, restocked_quantity = 0 } = item;
 
-    //check if product exist
+    //2.1 Assert product exists
     const current_product = await ProductModel.findOne({
       _id: product,
       deleted: false,
@@ -85,8 +87,6 @@ const checkStockAvailability = async ({ location, items }) => {
         stock_error: `Product not found for ID ${product}.`,
       };
     }
-
-    console.log(current_product);
 
     // Get the current stock balance for the product
     const current_balance = await getStockBalance({
@@ -102,7 +102,7 @@ const checkStockAvailability = async ({ location, items }) => {
     if (stock_balance < quantity) {
       return {
         can_proceed: false,
-        stock_error: `Insufficient stock for product ${current_product.name}. \nMaximum Allowed: ${stock_balance} ${current_product.unit?.code} \nRequested: ${quantity} ${current_product.unit?.code}`,
+        stock_error: `Insufficient stock for ${current_product.name}. \nMaximum Allowed: ${stock_balance} ${current_product.unit?.code} \nRequested: ${quantity} ${current_product.unit?.code}`,
       };
     }
   }
@@ -110,39 +110,37 @@ const checkStockAvailability = async ({ location, items }) => {
   return { can_proceed: true, stock_error: null };
 };
 
-//🟩  Returns Stock Available batches
-const getStockAvailableBatches = async ({ location, product_id }) => {
-  const today = new Date();
-
+// Get Batch Sort Query
+const getBatchSortQuery = async () => {
   //get the inventory method being used
-  let sort_query = {};
-  let settings = await SettingModel.findOne({ setting_id: SETTING_ID });
-  const inventory_method = settings.inventory_method;
+  let settings = await SettingModel.findOne({ setting_id: SETTING_ID })
 
-  //Assert inventory method
-  appAssert(
-    INVENTORY_METHODS.includes(inventory_method),
-    HTTP_STATUS.BAD_REQUEST,
-    "Invalid Inventory Method"
-  );
+  //Assert setting exists
+  appAssert(settings, HTTP_STATUS.BAD_REQUEST, "Settings not found!");
 
-  // Determine sorting method based on inventory strategy: FIFO, LIFO, or FEFO
-  if (inventory_method === "FIFO") {
-    // FIFO (First-In, First-Out): stock out from the oldest batches first
-    sort_query = { createdAt: 1 };
-  } else if (inventory_method === "LIFO") {
-    // LIFO (Last-In, First-Out): stock out from the newest batches first
-    sort_query = { createdAt: -1 };
-  } else if (inventory_method === "FEFO") {
-    // FEFO (First-Expired, First-Out): stock out from items nearest to expiry first
-    // Within the same expiry date, older batcehs (by creation date) are prioritized
-    sort_query = { expiry_date: 1, createdAt: 1 };
-  }
+  // Define sorting rules for each inventory strategy
+  const sortStrategies = {
+    FIFO: { createdAt: 1 }, // First-In, First-Out
+    LIFO: { createdAt: -1 }, // Last-In, First-Out
+    FEFO: { expiry_date: 1, createdAt: 1 }, // First-Expired, First-Out
+  };
 
-  // if expiry date is considered, return un expired batches, if not, return all
-  const is_expiry_date_considered = settings.is_expiry_date_considered;
+  // Return the corresponding sort query
+  return sortStrategies[settings.inventory_method];
+};
+
+//🟩  Returns Stock Available batches
+const getStockAvailableBatches = async ({ location, product_id, session }) => {
+  //1. Get the sorting query based on the inventory method to determine stock out order.
+  const sort_query = await getBatchSortQuery();
+
   let expiry_date_query = {}; // Default to an empty object, no expiry date condition
+
+  // Checks if the expiry date should be considered
+  const is_expiry_date_considered = await isExpiryDateConsidered();
+
   if (is_expiry_date_considered) {
+    const today = new Date();
     expiry_date_query = {
       $or: [
         { expiry_date: { $gt: today } }, // Batches with future expiry dates
@@ -157,7 +155,9 @@ const getStockAvailableBatches = async ({ location, product_id }) => {
     location,
     quantity_in_stock: { $gt: 0 },
     ...expiry_date_query, // Conditionally include expiry date query
-  }).sort(sort_query);
+  })
+    .session(session)
+    .sort(sort_query);
 
   return batches_with_available_stock;
 };
@@ -181,7 +181,6 @@ const handleLowStockNotification = async ({ req, items }) => {
 
       // if stock is below the low stock threshold
       if (current_product.low_quantity >= stock_balance) {
-
         //Find Users to send stock alert
         let settings = await SettingModel.findOne({ setting_id: SETTING_ID });
         const stock_alert_to = settings.stock_alert_to;
@@ -192,19 +191,18 @@ const handleLowStockNotification = async ({ req, items }) => {
           is_active: true,
         });
 
-        console.log({stock_alert_users});
         const location_data = await LocationModel.findById(location);
 
         // construct message
         let message = `${current_product.name} in ${location_data.location_type} ${location_data.name}  has reached a low inventory level. Only ${stock_balance} units left. Consider restocking to meet future demand.`;
         let telegramMessage = `<u><b><tg-emoji emoji-id="5368324170671202286"> ⚠️ </tg-emoji>LOW STOCK ALERT</b></u> \n\n<b>Product:</b> ${current_product.name}\n<b>${location_data.location_type}:</b> ${location_data.name}\n<b>Current Stock:</b> ${stock_balance} ${current_product.unit?.code}`;
-        let tgChatIds = stock_alert_users.map(user=>user.tgChatId)
+        let tgChatIds = stock_alert_users.map((user) => user.tgChatId);
 
         //send telegram notification
         await sendTelegramMessage({
           message: telegramMessage,
           imageUrl: `uploads/product-images/${current_product.image}`,
-          tgChatIds
+          tgChatIds,
         });
 
         //send in app notification
@@ -228,12 +226,7 @@ const handleLowStockNotification = async ({ req, items }) => {
   }
 };
 
-const sendTelegramMessage = async ({
-  message,
-  imageUrl,
-  tgChatIds  
-}) => {
-
+const sendTelegramMessage = async ({ message, imageUrl, tgChatIds }) => {
   if (imageUrl) {
     try {
       const fullPath = path.join(process.cwd(), imageUrl);
@@ -335,7 +328,6 @@ const hasPermissions = async (req, requiredPermissions) => {
 
 module.exports = {
   isExpiryDateConsidered,
-  checkStockAvailability,
   checkStockAvailability,
   getStockAvailableBatches,
   handleLowStockNotification,

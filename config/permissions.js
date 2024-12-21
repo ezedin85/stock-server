@@ -122,13 +122,13 @@ const ALL_PERMISSIONS = [
   { group: "Stock Adjustment", crud_type: "DELETE", code_name: "can_delete_stock_adjustment", description: "can delete stock adjustment",  },
 
   //Purchase Payments
-  { group: "Purchase Payment", crud_type: "CREATE", code_name: "can_add_purchase_payments", description: "can add purchase payment",  },
+  { group: "Purchase Payment", crud_type: "CREATE", code_name: "can_create_purchase_payments", description: "can create purchase payment",  },
   { group: "Purchase Payment", crud_type: "READ", code_name: "can_view_purchase_payments", description: "can view purchase payments",  },
   { group: "Purchase Payment", crud_type: "UPDATE", code_name: "can_update_purchase_payments", description: "can update purchase payments",  },
   { group: "Purchase Payment", crud_type: "DELETE", code_name: "can_delete_purchase_payments", description: "can delete purchase payments",  },
 
     //Sale Payments
-    { group: "Sale Payment", crud_type: "CREATE", code_name: "can_add_sale_payments", description: "can add sale payment",  },
+    { group: "Sale Payment", crud_type: "CREATE", code_name: "can_create_sale_payments", description: "can create sale payment",  },
     { group: "Sale Payment", crud_type: "READ", code_name: "can_view_sale_payments", description: "can view sale payments",  },
     { group: "Sale Payment", crud_type: "UPDATE", code_name: "can_update_sale_payments", description: "can update sale payments",  },
     { group: "Sale Payment", crud_type: "DELETE", code_name: "can_delete_sale_payments", description: "can delete sale payments",  },

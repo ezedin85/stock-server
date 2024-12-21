@@ -114,7 +114,7 @@ const getTransfers = async ({ location }) => {
 };
 
 const validateTransferProducts = (products) => {
-  //loop thorugh products & remove products without product or quantity
+  //1. loop thorugh products & check product and quantity exists
   products.forEach(({ product, quantity }) => {
     const validations = [
       [product, "Please select a product for all entries."],
@@ -129,17 +129,17 @@ const validateTransferProducts = (products) => {
     );
   });
 
-  //ensure at least one product
+  //2. ensure at least one product is selected
   appAssert(
     products.length > 0,
     HTTP_STATUS.BAD_REQUEST,
     `You must select at least one valid product.`
   );
 
-  //ensure no duplicate product
+  //3. ensure no duplicate product
   let selectedProducts = products.map((item) => item.product);
   appAssert(
-    !utils.hasDuplicates(selectedProducts) > 0,
+    !utils.hasDuplicates(selectedProducts),
     HTTP_STATUS.BAD_REQUEST,
     `A product cannot be transferred more than once in a single transfer.`
   );
@@ -186,31 +186,31 @@ const transferProducts = async ({
         await common.getStockAvailableBatches({
           location,
           product_id: product.product,
+          session,
         });
 
       let total_transferred = 0; // Tracks the total quantity transferred for a single product across multiple batches
       for (const batch of batches_with_available_stock) {
-        // Stop processing if the required quantity has already been fulfilled
-        if (total_transferred >= product.quantity) {
-          break;
-        }
+        // Exit if required quantity is fulfilled
+        if (total_transferred >= product.quantity) break;
 
-        // Determine the quantity to sell from this batch as the smaller value between
-        // the stock available in the batch and the remaining quantity needed to fulfill the order
+        // Determine the quantity to deduct from the batch (minimum of available stock in the batch or
+        // remaining required quantity)
         let qty_to_transfer_on_this_batch = Math.min(
           batch.quantity_in_stock,
           product.quantity - total_transferred
         );
 
+         // Track affected batches for later use in transaction product
         affected_batches.push({
           batch: batch._id,
           quantity: qty_to_transfer_on_this_batch,
         });
 
-        // Update the cumulative total quantity transferred
+        // Update the total transferred quantity
         total_transferred += qty_to_transfer_on_this_batch;
 
-        // Deduct the quantity transferred from the batch’s available stock in the inventory
+        // Deduct quantity from the batch stock
         await BatchModel.findByIdAndUpdate(
           batch._id,
           {
@@ -224,8 +224,8 @@ const transferProducts = async ({
         [
           {
             transfer_id: transfer?.[0]?._id,
-            sending_batches: affected_batches,
             product: product.product,
+            sending_batches: affected_batches,
             total_quantity: product.quantity,
           },
         ],
@@ -238,7 +238,7 @@ const transferProducts = async ({
   } catch (error) {
     // If an error occurred, abort the transaction
     await session.abortTransaction();
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();
@@ -273,7 +273,7 @@ const returnTransferedProduct = async ({
       i--
     ) {
       const sending_batch = transferProduct.sending_batches[i];
-
+    
       //get remaining quantity from transfer
       const unreceived_qty_from_this_sending_batch =
         sending_batch.quantity - sending_batch.received_qty;
@@ -297,17 +297,21 @@ const returnTransferedProduct = async ({
       }
 
       // Deduct the quantity returned from the batch’s available stock in the inventory
-      await BatchModel.findByIdAndUpdate(
-        sending_batch.batch,
+      const updated_batch = await BatchModel.findByIdAndUpdate(
+        sending_batch.batch?._id,
         {
           $inc: { quantity_in_stock: qty_to_return_from_this_batch },
         },
         { session }
       );
 
+      //assert batch updated
+      appAssert(updated_batch, HTTP_STATUS.BAD_REQUEST, "Couldn't update batch! Please try again later!")
+
       //deduct remaining return quantity
       remaining_return -= qty_to_return_from_this_batch;
     }
+
 
     transferProduct.returned_quantity += new_returning_quantity; //increase the returned quantity for histoty
     await transferProduct.save({ session }); //save the operation
@@ -316,7 +320,7 @@ const returnTransferedProduct = async ({
   } catch (error) {
     // If an error occurred, abort the transaction
     await session.abortTransaction();
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();
@@ -345,11 +349,8 @@ const receiveTransferredProduct = async ({
     let remainig_receiving_qty = new_receiving_quantity;
     for (const sending_batch of transferProduct.sending_batches) {
       // Stop processing if the required quantity has already been fulfilled
-      if (remainig_receiving_qty <= 0) {
-        break;
-      }
+      if (remainig_receiving_qty <= 0) break;
 
-      //
       const unreceived_qty_from_this_sending_batch =
         sending_batch.quantity - sending_batch.received_qty;
 
@@ -358,19 +359,19 @@ const receiveTransferredProduct = async ({
 
       // Determine the quantity to deduct from this batch as the smaller value between
       // the stock available in the batch and the remaining quantity needed to fulfill the order
-      let qty_to_transfer_from_this_batch = Math.min(
+      let qty_to_receive_from_this_sending_batch = Math.min(
         unreceived_qty_from_this_sending_batch,
         remainig_receiving_qty
       );
 
-      //add items to the receiving location
+      //1. add items to the receiving location
       const batch = await BatchModel.create(
         [
           {
-            product: transferProduct.product,
             location,
-            total_quantity: qty_to_transfer_from_this_batch,
-            quantity_in_stock: qty_to_transfer_from_this_batch,
+            product: transferProduct.product,
+            total_quantity: qty_to_receive_from_this_sending_batch,
+            quantity_in_stock: qty_to_receive_from_this_sending_batch,
             unit_purchase_cost: sending_batch.batch?.unit_purchase_cost,
             expiry_date: sending_batch.batch?.expiry_date,
           },
@@ -378,16 +379,16 @@ const receiveTransferredProduct = async ({
         { session }
       );
 
-      //increase received quantity
-      sending_batch.received_qty += qty_to_transfer_from_this_batch;
+      //2. increase received quantity
+      sending_batch.received_qty += qty_to_receive_from_this_sending_batch;
 
-      //deduct the remaining receiving quantity
-      remainig_receiving_qty -= qty_to_transfer_from_this_batch;
+      //3. deduct the remaining receiving quantity
+      remainig_receiving_qty -= qty_to_receive_from_this_sending_batch;
 
       //save the receiving batches
       new_receiving_batches.push({
         batch: batch?.[0]?._id,
-        quantity: qty_to_transfer_from_this_batch,
+        quantity: qty_to_receive_from_this_sending_batch,
       });
     }
 
@@ -398,12 +399,90 @@ const receiveTransferredProduct = async ({
   } catch (error) {
     // If an error occurred, abort the transaction
     await session.abortTransaction();
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();
   }
 };
+
+const validateReceiveOrReturn = async (req, type) => {
+  const { transfer_product_id } = req.params;
+  const quantity = Number(req.body?.quantity);
+  const location = req.currentLocation;
+
+  // ✅ 1. Validate required fields
+  utils.validateRequiredFields({ quantity });
+
+  // ✅ 2. Validate 'type' (must be 'receive' or 'return')
+  appAssert(
+    ["receive", "return"].includes(type),
+    HTTP_STATUS.BAD_REQUEST,
+    "Invalid transfer type provided!"
+  );
+
+  // ✅ 3. Get the transfer product data
+  const transferProduct = await TransferProductModel.findOne({
+    _id: transfer_product_id,
+  });
+
+  // ✅ 4. Assert that the transfer product exists
+  appAssert(
+    transferProduct,
+    HTTP_STATUS.BAD_REQUEST,
+    "Transfer Product not found!"
+  );
+
+  // ✅ 5. Determine the location field based on type
+  const locationField = type === "receive" ? "receiver" : "sender";
+
+  // ✅ 6. Assert user has access to the sender/receiver location
+  const transfer = await TransferModel.findOne({
+    _id: transferProduct.transfer_id,
+    [locationField]: location,
+  });
+
+  appAssert(
+    transfer,
+    HTTP_STATUS.BAD_REQUEST,
+    `This transfer is not available to ${type} at your current location.`
+  );
+
+  // ✅ 7. Return useful data
+  return { transferProduct, transfer, quantity, location };
+};
+
+const validateEnoughQuantity = (quantity, transferProduct) => {
+  
+  // ✅ 1. Calculate total received and returned quantities
+  const total_qty = transferProduct.total_quantity;
+  const total_returned_qty = transferProduct.returned_quantity;
+  let total_received_qty = transferProduct.receiving_batches.reduce(
+    (acc, item) => acc + item.quantity,
+    0
+  );
+  const received_and_returned_qty = total_returned_qty + total_received_qty;
+
+  // ✅ 2. Calculate total remaining quantity
+  const total_remaining_qty = total_qty - received_and_returned_qty;
+
+  // ✅ 3. Assert that total_remaining_qty is valid (not negative)
+  appAssert(
+    total_remaining_qty >= 0,
+    HTTP_STATUS.INTERNAL_SERVER_ERROR,
+    `Data inconsistency detected. Total remaining quantity is negative: ${total_remaining_qty}`
+  );
+
+  //✅ 4. prevent receiving or returning if requested quantity is greater than remaining
+  appAssert(
+    quantity <= total_remaining_qty,
+    HTTP_STATUS.BAD_REQUEST,
+    `No sufficient remaining quantity. Remaining: ${total_remaining_qty}, Requested: ${quantity}`
+  );
+};
+
+
+
 
 module.exports = {
   getTransfers,
@@ -411,4 +490,6 @@ module.exports = {
   transferProducts,
   returnTransferedProduct,
   receiveTransferredProduct,
+  validateReceiveOrReturn,
+  validateEnoughQuantity
 };

@@ -13,27 +13,26 @@ exports.getTrxPayments = catchErrors(async (req, res) => {
 
   //assert transaction type
   trxHelper.assertTransactionType(transaction_type);
-  
+
+  //assert transaction exists at user's current location
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
     transaction_type,
     location,
   });
-
-  //assert transaction exist and user is allowd with his current trx location
   appAssert(
     transaction,
     HTTP_STATUS.BAD_REQUEST,
-    "Selected transaction not found at your current location."
+    `Selected ${transaction_type} not found at your current location.`
   );
 
   // call service
   const payments = await PaymentModel.find({
     transaction: trx_id,
   }).populate([
-    { path: "created_by", select: "first_name last_name" },
-    { path: "updated_by", select: "first_name last_name" },
+    { path: "created_by updated_by", select: "first_name last_name" },
   ]);
+
   // return response
   return res.status(HTTP_STATUS.OK).json(payments);
 });
@@ -41,73 +40,70 @@ exports.getTrxPayments = catchErrors(async (req, res) => {
 exports.addPayment = catchErrors(async (req, res) => {
   // validate request
   const { trx_id, transaction_type } = req.params;
-  const { remark } = req.body;
-  const amount = Number(req.body?.amount);
+  const { remark,amount } = req.body;
   const created_by = req.userId;
   const location = req.currentLocation;
 
-  //assert transaction type
+  //1.1 assert transaction type
   trxHelper.assertTransactionType(transaction_type);
 
-  utils.validateRequiredFields({ amount });
+  // 1.2 validate required & numeric fields
+  utils.validateNumberFields({amount}, ["amount"])
 
+  //assert transaction exists at user's current location
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
     transaction_type,
     location,
   });
-
-  //assert transaction exist and user is allowd with his current trx location
   appAssert(
     transaction,
     HTTP_STATUS.BAD_REQUEST,
     "Selected transaction not found at your current location."
   );
 
-  let payment_type;
-  if (transaction.transaction_type === "sale") {
-    payment_type = "RECEIVED";
-  } else if (transaction.transaction_type === "purchase") {
-    payment_type = "PAID";
-  } else {
-    //should never happen but in case
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, "invalid Transaction Type");
-  }
+  let payment_type =
+    transaction_type === "sale"
+      ? "RECEIVED"
+      : transaction_type === "purchase"
+      ? "PAID"
+      : undefined;
 
   // call service
   await PaymentModel.create({
     transaction: trx_id,
+    payment_type,
     amount,
     remark,
-    payment_type,
     created_by,
   });
 
   // return response
   return res.status(HTTP_STATUS.OK).json({
-    message: `Payment Added Successfully for the ${transaction.transaction_type}`,
+    message: `Payment Added Successfully for the ${transaction_type}`,
   });
 });
 
 exports.updatePayment = catchErrors(async (req, res) => {
   // validate request
   const { payment_id, trx_id, transaction_type } = req.params;
-  const { remark } = req.body;
-  const amount = Number(req.body?.amount);
+  const { remark, amount } = req.body;
   const updated_by = req.userId;
   const location = req.currentLocation;
 
-  //assert transaction type
+  //1.1 assert transaction type
   trxHelper.assertTransactionType(transaction_type);
-  utils.validateRequiredFields({ amount });
 
+  // 1.2 validate required & numeric fields
+  utils.validateNumberFields({amount}, ["amount"])
+
+  //1.3 assert transaction exists at user's current location
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
     transaction_type,
     location,
   });
 
-  //assert transaction exist and user is allowd with his current trx location
   appAssert(
     transaction,
     HTTP_STATUS.BAD_REQUEST,
@@ -116,7 +112,10 @@ exports.updatePayment = catchErrors(async (req, res) => {
 
   // call service
   const updatedRecord = await PaymentModel.findOneAndUpdate(
-    { _id: payment_id, transaction: trx_id },
+    {
+      _id: payment_id,
+      transaction: trx_id, //makes sure user has permission
+    },
     {
       amount,
       remark,
@@ -142,13 +141,12 @@ exports.deletePayment = catchErrors(async (req, res) => {
   //assert transaction type
   trxHelper.assertTransactionType(transaction_type);
 
+  //1.3 assert transaction exists at user's current location
   const transaction = await TransactionModel.findOne({
     _id: trx_id,
     transaction_type,
     location,
   });
-
-  //assert transaction exist and user is allowd with his current trx location
   appAssert(
     transaction,
     HTTP_STATUS.BAD_REQUEST,
@@ -158,10 +156,10 @@ exports.deletePayment = catchErrors(async (req, res) => {
   // call service
   const deleteResult = await PaymentModel.findOneAndDelete({
     _id: payment_id,
-    transaction: trx_id,
+    transaction: trx_id, //makes sure user has permission
   });
 
-  //assert payment found and updated
+  //assert payment found and deleted
   appAssert(deleteResult, HTTP_STATUS.BAD_REQUEST, "Payment record not found");
 
   // return response

@@ -9,26 +9,19 @@ exports.getRecords = catchErrors(async (req, res) => {
   const productUnits = await ProductUnitModel.find({
     deleted: false,
   }).populate([
-    {
-      path: "created_by",
-      select: "first_name last_name",
-    },
-    {
-      path: "updated_by",
-      select: "first_name last_name",
-    },
+    { path: "created_by updated_by", select: "first_name last_name" },
   ]);
 
   // return response
   return res.status(HTTP_STATUS.OK).json(productUnits);
 });
 
-exports.getUnitNames = catchErrors(async(req, res) => {
-   // call service
-   const productUnits = await ProductUnitModel.find({
+exports.getUnitNames = catchErrors(async (req, res) => {
+  // call service
+  const productUnits = await ProductUnitModel.find({
     deleted: false,
-  }).select("name code")
-  
+  }).select("name code");
+
   // return response
   return res.status(HTTP_STATUS.OK).json(productUnits);
 });
@@ -105,10 +98,12 @@ exports.updateRecord = catchErrors(async (req, res) => {
     "Product Unit with the same name or code already exists!"
   );
 
-  const productUnitData = await ProductUnitModel.findOne({ _id: id, deleted: false });
+  const productUnitData = await ProductUnitModel.findOne({
+    _id: id,
+    deleted: false,
+  });
   //assert product is found
   appAssert(productUnitData, HTTP_STATUS.NOT_FOUND, `Record not found!`);
-
 
   // call service
   const updatedRecord = await ProductUnitModel.findByIdAndUpdate(
@@ -125,7 +120,11 @@ exports.updateRecord = catchErrors(async (req, res) => {
   );
 
   //assert record found and updated
-  appAssert(updatedRecord, HTTP_STATUS.BAD_REQUEST, "Unable to update the product category. Please try again later.");
+  appAssert(
+    updatedRecord,
+    HTTP_STATUS.BAD_REQUEST,
+    "Unable to update the product category. Please try again later."
+  );
 
   // return response
   return res

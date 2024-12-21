@@ -11,8 +11,22 @@ const transferProductSchema = mongoose.Schema(
       ref: "Product",
       required: true,
     },
-    total_quantity: { type: Number, default: 0 }, //holds total quantity including returned
-    returned_quantity: { type: Number, default: 0 },
+    total_quantity: {
+      //holds total quantity including returned
+      type: Number,
+      validate: {
+        validator: (value) => value > 0,
+        message: "Total Quantity must be greater than 0.",
+      },
+    },
+    returned_quantity: {
+      type: Number,
+      default: 0,
+      validate: {
+        validator: (value) => value >= 0,
+        message: "Returned Quantity must be equal or greater than 0.",
+      },
+    },
     sending_batches: [
       //holds affected batches by sending (doesn't include returned)
       {
@@ -21,8 +35,23 @@ const transferProductSchema = mongoose.Schema(
           ref: "Batch",
           required: true,
         },
-        quantity: { type: Number, required: true, min: .01 },
-        received_qty: { type: Number, required: true, default: 0 }, //to controll, how many items received 👇 from this sending batch
+        quantity: {
+          type: Number,
+          required: true,
+          validate: {
+            validator: (value) => value > 0,
+            message: "Quantity must be greater than 0.",
+          },
+        },
+        received_qty: {
+          type: Number,
+          required: true,
+          default: 0,
+          validate: {
+            validator: (value) => value >= 0,
+            message: "Received Quantity must be equal or greater than 0.",
+          },
+        }, //to controll, how many items received 👇 from this sending batch
       },
     ],
     receiving_batches: [
@@ -32,7 +61,14 @@ const transferProductSchema = mongoose.Schema(
           ref: "Batch",
           required: true,
         },
-        quantity: { type: Number, required: true, min: .01 },
+        quantity: {
+          type: Number,
+          required: true,
+          validate: {
+            validator: (value) => value > 0,
+            message: "Quantity must be greater than 0.",
+          },
+        },
       },
     ],
   },

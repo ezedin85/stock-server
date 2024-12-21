@@ -40,17 +40,12 @@ exports.getRecord = catchErrors(async (req, res) => {
   const adjustment = await StockAdjustmentModel.findOne({
     _id: id,
     location,
-  })
-  .populate({
-    path: "created_by",
-    select: "first_name last_name",
-  })
-  .populate({
-    path: "updated_by",
+  }).populate({
+    path: "created_by updated_by",
     select: "first_name last_name",
   });
 
-  //assert adjustment exist and user is allowd with his current adj location
+  //assert adjustment exist and user is allowd with his current location
   appAssert(
     adjustment,
     HTTP_STATUS.BAD_REQUEST,
@@ -71,8 +66,8 @@ exports.getRecord = catchErrors(async (req, res) => {
     .populate({
       path: "batches.batch",
       select: "expiry_date unit_purchase_cost",
-    })
-    
+    });
+
   // return response
   return res.status(HTTP_STATUS.OK).json({
     ...adjustment.toObject(),
@@ -86,15 +81,18 @@ exports.addRecord = catchErrors(async (req, res) => {
   const created_by = req.userId;
   const location = req.currentLocation;
   const { products, reason } = req.body;
+
+  //1.1 validate required fields
   utils.validateRequiredFields({ reason });
 
-  //assert adjustment type
+  //1.2 assert adjustment type
   appAssert(
     STOCK_ADJUSTMENT_TYPES.includes(adjustment_type),
     HTTP_STATUS.BAD_REQUEST,
     "Unrecognized Adjustment type!"
   );
 
+  //1.3 validate products
   adjHelper.validateAdjustmentProducts(products, adjustment_type);
 
   // call service
@@ -144,7 +142,7 @@ exports.updateGeneralAdjustmentInfo = catchErrors(async (req, res) => {
     location,
   });
 
-  //assert adjustment exist and user is allowd with his current adj location
+  //assert adjustment exist and user is allowd with his current location
   appAssert(
     adjustment,
     HTTP_STATUS.BAD_REQUEST,
@@ -152,7 +150,6 @@ exports.updateGeneralAdjustmentInfo = catchErrors(async (req, res) => {
   );
 
   // call service
-
   adjustment.reason = reason;
   adjustment.updated_by = updated_by;
   await adjustment.save();
@@ -166,39 +163,39 @@ exports.updateGeneralAdjustmentInfo = catchErrors(async (req, res) => {
 exports.updateStockAdjustment = catchErrors(async (req, res) => {
   // validate request
   const { single_adjustment_id } = req.params;
-
-  const { expiry_date } = req.body;
-  const quantity = Number(req.body?.quantity);
-  const unit_price = Number(req.body?.unit_price);
+  const { expiry_date, quantity, unit_price } = req.body;
   const updated_by = req.userId;
   const location = req.currentLocation;
 
-  //check if the adjustment item exists
+  //1.1 check if the adjustment item exists
   const single_adjustment = await StockAdjustmentProductModel.findById(
     single_adjustment_id
   );
-
-  //assert adjustment exist and user is allowd with his current adj location
   appAssert(
     single_adjustment,
     HTTP_STATUS.BAD_REQUEST,
     "Selected adjustment Item not found!"
   );
 
+  //1.2 assert adjustment exist and user is allowd with his current location
   const adjustment = await StockAdjustmentModel.findOne({
     _id: single_adjustment.adjustment_id,
     location,
   });
-
-  //assert adjustment exist and user is allowd with his current adj location
   appAssert(
     adjustment,
     HTTP_STATUS.BAD_REQUEST,
     "Selected adjustment not found at your current location."
   );
+  let adjustment_type = adjustment.adjustment_type;
+
+  // 1.3 validate required & numeric fields
+  const requiredFields =
+    adjustment_type === "increase" ? ["quantity", "unit_price"] : ["quantity"];
+  utils.validateNumberFields({ quantity, unit_price }, requiredFields);
 
   // call service
-  if (adjustment.adjustment_type === "increase") {
+  if (adjustment_type === "increase") {
     await adjHelper.updateIncreaseAdjustment({
       single_adjustment_id,
       unit_price,
@@ -206,25 +203,12 @@ exports.updateStockAdjustment = catchErrors(async (req, res) => {
       expiry_date,
       updated_by,
     });
-  } else if (adjustment.adjustment_type === "decrease") {
+  } else if (adjustment_type === "decrease") {
     //previous quantity
     const prev_quantity = single_adjustment?.batches?.reduce(
       (acc, item) => acc + item.quantity,
       0
     );
-
-    //check stock availability for stock out
-    const { can_proceed, stock_error } = await checkStockAvailability({
-      location,
-      items: [
-        {
-          product: single_adjustment.product,
-          quantity,
-          restocked_quantity: prev_quantity,
-        },
-      ],
-    });
-    appAssert(can_proceed, HTTP_STATUS.BAD_REQUEST, stock_error);
 
     // If the new quantity is lower, add the difference back to the stock [return items]
     if (prev_quantity > quantity) {
@@ -236,6 +220,19 @@ exports.updateStockAdjustment = catchErrors(async (req, res) => {
         updated_by,
       });
     } else if (quantity > prev_quantity) {
+      //check stock availability for stock out
+      const { can_proceed, stock_error } = await checkStockAvailability({
+        location,
+        items: [
+          {
+            product: single_adjustment.product,
+            quantity,
+            restocked_quantity: prev_quantity,
+          },
+        ],
+      });
+      appAssert(can_proceed, HTTP_STATUS.BAD_REQUEST, stock_error);
+
       // how much additional to deduct from stock
       const additional_deduct_amount = quantity - prev_quantity;
       await adjHelper.applyNewStockOut({
@@ -260,16 +257,17 @@ exports.deleteAdjustmentProduct = catchErrors(async (req, res) => {
   const updated_by = req.userId;
   const location = req.currentLocation;
 
+  //assert selected adjustment product exists
   const single_adj = await StockAdjustmentProductModel.findById(
     single_adjustment_id
   );
-  //assert selected contact exists & its correct contact type
   appAssert(
     single_adj,
     HTTP_STATUS.BAD_REQUEST,
     "Selected Adjustment Item not found"
   );
 
+  //assert adjustment exist and user is allowd with his current location
   const adjustment = await StockAdjustmentModel.findOne({
     _id: single_adj.adjustment_id,
     location,
@@ -282,12 +280,16 @@ exports.deleteAdjustmentProduct = catchErrors(async (req, res) => {
 
   // call service
   if (adjustment.adjustment_type === "increase") {
-    const batch_id = single_adj.batches?.[0]?.batch; // find the purchase batch(there is only one batch for purchases)
+    const batch_id = single_adj.batches?.[0]?.batch; //find the only batch (only one batch when stock in)
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
       const batch = await BatchModel.findById(batch_id).session(session);
 
+      //assert batch exists
+      appAssert(batch, HTTP_STATUS.BAD_REQUEST, "Batch not found!");
+
+      //assert no stock out is performed from this batch
       appAssert(
         batch.quantity_in_stock === batch.total_quantity,
         HTTP_STATUS.BAD_REQUEST,
@@ -296,7 +298,7 @@ exports.deleteAdjustmentProduct = catchErrors(async (req, res) => {
         } items from this adjustment have already been sold or transferred.`
       );
 
-      //delete both the trx product and the associated batch
+      //delete both the adj product and the associated batch
       await batch.deleteOne({ session });
       await single_adj.deleteOne({ session });
 
@@ -307,16 +309,16 @@ exports.deleteAdjustmentProduct = catchErrors(async (req, res) => {
       await session.commitTransaction();
     } catch (error) {
       await session.abortTransaction();
-      throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+      throw new AppError(error.statusCode, error.message);
     } finally {
       session.endSession();
     }
-  }else if (adjustment.adjustment_type === "decrease") {
+  } else if (adjustment.adjustment_type === "decrease") {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
       for (const adj_batch of single_adj.batches) {
-        // return items to the batch
+        //1 return items to the all affected batches
         await BatchModel.findOneAndUpdate(
           { _id: adj_batch.batch, location },
           {
@@ -326,6 +328,7 @@ exports.deleteAdjustmentProduct = catchErrors(async (req, res) => {
         );
       }
 
+      //2. delete adjustment product
       await single_adj.deleteOne({ session });
       adjustment.updated_by = updated_by;
       await adjustment.save({ session });
@@ -334,13 +337,14 @@ exports.deleteAdjustmentProduct = catchErrors(async (req, res) => {
       await session.commitTransaction();
     } catch (error) {
       await session.abortTransaction();
-      throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+      throw new AppError(error.statusCode, error.message);
     } finally {
       session.endSession();
     }
   }
 
   // return response
-  return res.status(HTTP_STATUS.OK).json({ message: `Item successfully removed from the ${adjustment.adjustment_type} adjustment` });
+  return res.status(HTTP_STATUS.OK).json({
+    message: `Item successfully removed from the ${adjustment.adjustment_type} adjustment`,
+  });
 });
-

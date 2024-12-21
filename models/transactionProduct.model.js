@@ -18,11 +18,25 @@ const transactionProductSchema = mongoose.Schema(
           ref: "Batch",
           required: true,
         },
-        quantity: { type: Number, required: true, min: .01 },
+        quantity: {
+          type: Number,
+          required: true,
+          validate: {
+            validator: (value) => value > 0,
+            message: "Quantity must be greater than 0.",
+          },
+        },
       },
     ],
-    unit_price: { type: Number, required: true, min: 0.01 }, // greater than 0
-    vat_percentage: Number, // greater than 0
+    unit_price: {
+      type: Number,
+      required: true,
+      validate: {
+        validator: (value) => value > 0,
+        message: "Amount must be greater than 0.",
+      },
+    },
+    vat_percentage: Number, // on sell only
   },
   { timestamps: true }
 );

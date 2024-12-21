@@ -18,7 +18,14 @@ const stockAdjustmentProductSchema = mongoose.Schema(
           ref: "Batch",
           required: true,
         },
-        quantity: { type: Number, required: true, min: 0.01 },
+        quantity: {
+          type: Number,
+          required: true,
+          validate: {
+            validator: (value) => value > 0,
+            message: "Amount must be greater than 0.",
+          },
+        },
       },
     ],
   },

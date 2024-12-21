@@ -8,21 +8,14 @@ const utils = require("../utils/utils");
 exports.getContacts = catchErrors(async (req, res) => {
   // validate request
   const { contact_type } = req.params;
-  assertContactType(contact_type)
+  assertContactType(contact_type);
 
   // call service
   const contacts = await ContactModel.find({
     contact_type,
     deleted: false,
   }).populate([
-    {
-      path: "created_by",
-      select: "first_name last_name",
-    },
-    {
-      path: "updated_by",
-      select: "first_name last_name",
-    },
+    { path: "created_by updated_by", select: "first_name last_name" },
   ]);
 
   // return response
@@ -32,13 +25,13 @@ exports.getContacts = catchErrors(async (req, res) => {
 exports.getNames = catchErrors(async (req, res) => {
   // validate request
   const { contact_type } = req.params;
-  assertContactType(contact_type)
+  assertContactType(contact_type);
 
   // call service
   const contacts = await ContactModel.find({
     contact_type,
     deleted: false,
-  }).select("name")
+  }).select("name");
 
   // return response
   return res.status(HTTP_STATUS.OK).json(contacts);
@@ -47,7 +40,7 @@ exports.getNames = catchErrors(async (req, res) => {
 exports.getContact = catchErrors(async (req, res) => {
   // call service
   const { id, contact_type } = req.params;
-  assertContactType(contact_type)
+  assertContactType(contact_type);
 
   const contact = await ContactModel.findOne({
     _id: id,
@@ -69,8 +62,7 @@ exports.addRecord = catchErrors(async (req, res) => {
   const created_by = req.userId;
 
   //assert contact type
-  assertContactType(contact_type)
-
+  assertContactType(contact_type);
 
   //assert required fields
   utils.validateRequiredFields({ name });
@@ -113,8 +105,7 @@ exports.updateRecord = catchErrors(async (req, res) => {
   const updated_by = req.userId;
 
   // 1. Validate contact type
-  assertContactType(contact_type)
-
+  assertContactType(contact_type);
 
   // 2. Validate required fields
   utils.validateRequiredFields({ name });
@@ -175,13 +166,12 @@ exports.updateRecord = catchErrors(async (req, res) => {
 exports.deleteRecord = catchErrors(async (req, res) => {
   // validate request
   const { contact_type, id } = req.params;
-  assertContactType(contact_type)
+  assertContactType(contact_type);
 
   const contact = await ContactModel.findOne({ _id: id, deleted: false });
   //assert contact exists
   appAssert(contact, HTTP_STATUS.BAD_REQUEST, "Contact not found!");
 
-  
   // call service
   const milliseconds_now = Date.now(); //add unique, if item gets deleted many times
   contact.name = `_${contact.name}_${milliseconds_now}`;

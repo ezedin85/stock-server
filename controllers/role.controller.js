@@ -8,13 +8,9 @@ const utils = require("../utils/utils");
 exports.getRoles = catchErrors(async (req, res) => {
   // call service
   const roles = await RoleModel.find({ deleted: false })
-    .populate([{
-      path: "created_by",
-      select: "first_name last_name",
-    },{
-      path: "updated_by",
-      select: "first_name last_name",
-    }])
+    .populate([
+      { path: "created_by updated_by", select: "first_name last_name" },
+    ])
     .select("role_name created_by createdAt updatedAt updated_by permissions")
     .sort("-createdAt");
 
@@ -22,23 +18,20 @@ exports.getRoles = catchErrors(async (req, res) => {
   return res.status(HTTP_STATUS.OK).json(roles);
 });
 
-
 exports.getNames = catchErrors(async (req, res) => {
   // call service
-  const roles = await RoleModel.find({ deleted: false })
-    .select("role_name")
+  const roles = await RoleModel.find({ deleted: false }).select("role_name");
 
   // return response
   return res.status(HTTP_STATUS.OK).json(roles);
 });
-
 
 exports.getRole = catchErrors(async (req, res) => {
   // call service
   const { id } = req.params;
   const role = await RoleModel.findOne({ _id: id, deleted: false }).select(
     "role_name permissions"
-  )
+  );
 
   appAssert(role, HTTP_STATUS.BAD_REQUEST, "Role not found!");
 
@@ -58,7 +51,7 @@ exports.createRole = catchErrors(async (req, res) => {
   // validate request
   const { roleName, permissions } = req.body;
 
-  //1.1 assert role name 
+  //1.1 assert role name
   utils.validateRequiredFields({ roleName });
 
   //1.2 asset no name conflict
@@ -100,8 +93,7 @@ exports.updateRole = catchErrors(async (req, res) => {
     .json({ message: "Role Updated successfully" });
 });
 
-
-exports.deleteRole = catchErrors(async(req, res) => {
+exports.deleteRole = catchErrors(async (req, res) => {
   // validate request
   const { id } = req.params;
   const role = await RoleModel.findOne({ _id: id, deleted: false });
@@ -109,7 +101,7 @@ exports.deleteRole = catchErrors(async(req, res) => {
 
   // call service
   //2.1 mark role deleted
-  const milliseconds_now = Date.now(); 
+  const milliseconds_now = Date.now();
   role.role_name = `_${role.role_name}_${milliseconds_now}`;
   role.deleted = true;
   role.deleted_by = req.userId;
@@ -119,4 +111,3 @@ exports.deleteRole = catchErrors(async(req, res) => {
     .status(HTTP_STATUS.OK)
     .json({ message: `Role deleted Successfully` });
 });
-

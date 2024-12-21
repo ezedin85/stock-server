@@ -16,11 +16,7 @@ exports.getLocations = catchErrors(async (req, res) => {
     deleted: false,
   }).populate([
     {
-      path: "created_by",
-      select: "first_name last_name",
-    },
-    {
-      path: "updated_by",
+      path: "created_by updated_by",
       select: "first_name last_name",
     },
   ]);

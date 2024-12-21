@@ -2,6 +2,7 @@ const HTTP_STATUS = require("../constants/http");
 const appAssert = require("./appAssert");
 const path = require("path");
 const fs = require("fs");
+const AppError = require("./AppError");
 
 //Methods
 const deleteFile = (imagePath) => {
@@ -65,11 +66,44 @@ const validateRequiredFields = (fields) => {
   });
 };
 
+const validateNumberFields = (fields, requiredFields = []) => {
+  Object.entries(fields).forEach(([key, value]) => {
+    // Format the field name
+    const formattedKey = key
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    // Convert the value to a number
+    const numericValue = value == null ? value : Number(value);
+
+    console.log(requiredFields);
+    
+    // if required, make sure, its number and is greter than 0
+    if (requiredFields.includes(key)) {
+      if (numericValue == null || isNaN(numericValue) || numericValue <= 0) {
+        throw new AppError(
+          HTTP_STATUS.BAD_REQUEST,
+          `${formattedKey} is required and must be a valid positive number greater than 0!`
+        );
+      }
+    } else {
+      //if not required, just make sure its not negative number
+      if (numericValue < 0) {
+        throw new AppError(
+          HTTP_STATUS.BAD_REQUEST,
+          `${formattedKey} must not be a negative number!`
+        );
+      }
+    }
+  });
+};
+
 module.exports = {
   deleteFile,
   checkPhoneNumberValidity,
   hasDuplicates,
   isValidDate,
   validateRequiredFields,
+  validateNumberFields,
   normalize,
 };

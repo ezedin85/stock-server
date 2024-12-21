@@ -25,7 +25,7 @@ const validateAdjustmentProducts = (products, adjustment_type) => {
       ],
       [
         adjustment_type !== "increase" || Number(unit_price) > 0,
-        "Some products have a unit less than zero. Please update them.",
+        "Some products have a an estimated cost less than zero. Please update them.",
       ],
     ];
 
@@ -44,7 +44,7 @@ const validateAdjustmentProducts = (products, adjustment_type) => {
   //ensure no duplicate product
   let selectedProducts = products.map((item) => item.product);
   appAssert(
-    !utils.hasDuplicates(selectedProducts) > 0,
+    !utils.hasDuplicates(selectedProducts),
     HTTP_STATUS.BAD_REQUEST,
     `A product cannot be adjusted more than once in a single adjustment.`
   );
@@ -60,9 +60,11 @@ const getAdjustmentId = async ({ adjustment_type, session }) => {
   );
 
   // Check if settings document exists
-  if (!settings) {
-    throw new Error("Settings not found for asjudment ID generation.");
-  }
+  appAssert(
+    settings,
+    HTTP_STATUS.BAD_REQUEST,
+    "Settings not found for asjudment ID generation."
+  );
 
   let new_sequence = settings.adjustment_sequence;
 
@@ -75,7 +77,10 @@ const getAdjustmentId = async ({ adjustment_type, session }) => {
       adj_id = ADJUSTMENT_DEC_PREFIX + new_sequence;
       break;
     default:
-      throw new AppError(`Invalid adjustment type: ${adjustment_type}`);
+      throw new AppError(
+        HTTP_STATUS.BAD_REQUEST,
+        `Invalid adjustment type: ${adjustment_type}`
+      );
   }
 
   return adj_id;
@@ -92,13 +97,13 @@ const increaseProductStocks = async ({
   session.startTransaction();
 
   try {
-    //get unique adjst ID
+    //1. get unique adjst ID
     const adjst_id = await getAdjustmentId({
       adjustment_type: "increase",
       session,
     });
 
-    //save adjustment general info
+    //2. SAVE adjustment general info
     const adjustment = await StockAdjustmentModel.create(
       [
         {
@@ -111,38 +116,31 @@ const increaseProductStocks = async ({
       ],
       { session }
     );
-    //get expiry date setting
-    const is_expiry_date_considered = await common.isExpiryDateConsidered({
-      session,
-    });
 
-    //loop thorugh to be adjusted products
+    //3. SAVE adj product and its batch
+    //3.1 loop thorugh to be adjusted products
     for (const product of products) {
-      // Don't change the expiry date field, if is_expiry_date_considered is false
-      const conditional_data = is_expiry_date_considered
-        ? {
-            expiry_date: utils.isValidDate(new Date(expiry_date))
-              ? new Date(expiry_date)
-              : null,
-          }
-        : {};
+      //3.2 define batch query
+      let batchQuery = {
+        location,
+        product: product.product,
+        total_quantity: product.quantity,
+        quantity_in_stock: product.quantity,
+        unit_purchase_cost: product.unit_price,
+        expiry_date: utils.isValidDate(new Date(product.expiry_date))
+          ? new Date(product.expiry_date)
+          : null,
+      };
 
-      // Save the batch, so the stock amount incrases
-      const batch = await BatchModel.create(
-        [
-          {
-            product: product.product,
-            total_quantity: product.quantity,
-            quantity_in_stock: product.quantity,
-            unit_purchase_cost: product.unit_price,
-            ...conditional_data,
-            location,
-          },
-        ],
-        { session }
-      );
+      //3.3  if expiry date is not considered, don't save the 'expiry' value
+      if (!(await common.isExpiryDateConsidered())) {
+        delete batchQuery.expiry_date;
+      }
 
-      //save the adjustment product data
+      //3.4 Save the batch, so the stock amount incrases
+      const batch = await BatchModel.create([batchQuery], { session });
+
+      //3.5 save the adjustment product data
       await StockAdjustmentProductModel.create(
         [
           {
@@ -165,7 +163,7 @@ const increaseProductStocks = async ({
   } catch (error) {
     // If an error occurred, abort the transaction
     await session.abortTransaction();
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();
@@ -184,12 +182,13 @@ const decreaseProductStocks = async ({
   session.startTransaction();
 
   try {
+    //1 get uniquie id
     const adjst_id = await getAdjustmentId({
       adjustment_type: "decrease",
       session,
     });
 
-    //save adjustment general info
+    //2 save adjustment general info
     const adjustment = await StockAdjustmentModel.create(
       [
         {
@@ -203,12 +202,15 @@ const decreaseProductStocks = async ({
       { session }
     );
 
+    //3. SAVE adj product and its batch
+    //3.1 loop thorugh products
     for (const product of products) {
-      // Retrieve batches with available stock and unexpired items,
+      //3.2 Retrieve batches with available stock and unexpired items,
       const batches_with_available_stock =
         await common.getStockAvailableBatches({
           location,
           product_id: product.product,
+          session,
         });
 
       let affected_batches = []; //tracks from which batches stock is deducted from
@@ -221,11 +223,20 @@ const decreaseProductStocks = async ({
           break;
         }
 
-        // Determine the quantity to decrease from this batch as the smaller value between
-        // the stock available in the batch and the remaining quantity needed to fulfill the order
+        // Determine the quantity to deduct from the batch (minimum of available stock in the batch or
+        // remaining unprocessed quantity)
         let qty_to_process_on_this_batch = Math.min(
           batch.quantity_in_stock,
           product.quantity - total_processed
+        );
+
+        // Reduce stock quantity
+        await BatchModel.findByIdAndUpdate(
+          batch._id,
+          {
+            $inc: { quantity_in_stock: -qty_to_process_on_this_batch },
+          },
+          { session }
         );
 
         affected_batches.push({
@@ -235,15 +246,6 @@ const decreaseProductStocks = async ({
 
         // Update the cumulative total quantity adjusted
         total_processed += qty_to_process_on_this_batch;
-
-        // Deduct the quantity adjusted from the batch’s available stock in the inventory
-        await BatchModel.findByIdAndUpdate(
-          batch._id,
-          {
-            $inc: { quantity_in_stock: -qty_to_process_on_this_batch },
-          },
-          { session }
-        );
       }
 
       await StockAdjustmentProductModel.create(
@@ -263,7 +265,7 @@ const decreaseProductStocks = async ({
   } catch (error) {
     // If an error occurred, abort the transaction
     await session.abortTransaction();
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();
@@ -282,22 +284,15 @@ const updateIncreaseAdjustment = async ({
   session.startTransaction();
 
   try {
-    //check required fields
-    utils.validateRequiredFields({ unit_price });
-
-    // Find the stock adjustment by ID within the session
+    //1. validate
+    //1.1 Find the stock adjustment by ID
+    // Records validated at parent level; no extra assertions needed.
     const single_adjustment = await StockAdjustmentProductModel.findById(
       single_adjustment_id
     ).session(session);
 
-    appAssert(
-      single_adjustment,
-      HTTP_STATUS.BAD_REQUEST,
-      "Selected adjustment Item not found!"
-    );
-
-    //check if the sold quanity from the batch is greater than the new stock quanity
-    const the_only_batch = single_adjustment.batches?.[0]; //find the first adjustment batch, for stock in, there is only one batch
+    //find the first adjustment batch, for stock in, there is only one batch
+    const the_only_batch = single_adjustment.batches?.[0];
 
     const batch = await BatchModel.findById(the_only_batch.batch).session(
       session
@@ -307,40 +302,36 @@ const updateIncreaseAdjustment = async ({
     const already_sold_from_batch =
       batch.total_quantity - batch.quantity_in_stock;
 
-    if (already_sold_from_batch > quantity) {
-      throw Error(
-        `Quantity too low. ${already_sold_from_batch} items have already been sold from this batch!`
-      );
-    }
+    //1.2 prevent decresing more than what is already been sold
+    appAssert(
+      quantity >= already_sold_from_batch,
+      HTTP_STATUS.BAD_REQUEST,
+      `Quantity too low. ${already_sold_from_batch} items have already been sold from this batch!`
+    );
 
-    //update the batch quantity in single adjustmentProduct
+    //2. call service
+    //2.1 update the batch quantity in single adjustmentProduct
     the_only_batch.quantity = quantity;
     await single_adjustment.save({ session });
 
-    //get expiry date setting
-    const is_expiry_date_considered = await common.isExpiryDateConsidered({
-      session,
-    });
+    //2.2 update batch
+    let updateBatchQuery = {
+      total_quantity: quantity,
+      quantity_in_stock: quantity - already_sold_from_batch,
+      unit_purchase_cost: unit_price,
+      expiry_date: utils.isValidDate(new Date(expiry_date))
+        ? new Date(expiry_date)
+        : null,
+    };
 
-    // Don't change the expiry date field, if is_expiry_date_considered is false
-    const conditional_data = is_expiry_date_considered
-      ? {
-          expiry_date: utils.isValidDate(new Date(expiry_date))
-            ? new Date(expiry_date)
-            : null,
-        }
-      : {};
+    //3.3  if expiry date is not considered, don't save the 'expiry' value
+    if (!(await common.isExpiryDateConsidered())) {
+      delete updateBatchQuery.expiry_date;
+    }
 
     await BatchModel.findByIdAndUpdate(
       the_only_batch.batch,
-      {
-        $set: {
-          total_quantity: quantity,
-          quantity_in_stock: quantity - already_sold_from_batch,
-          unit_purchase_cost: unit_price,
-          ...conditional_data,
-        },
-      },
+      { $set: updateBatchQuery },
       { session }
     );
 
@@ -354,7 +345,7 @@ const updateIncreaseAdjustment = async ({
     await session.commitTransaction();
   } catch (error) {
     await session.abortTransaction();
-    throw new AppError(error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     session.endSession();
   }
@@ -365,15 +356,10 @@ async function applyReturn({ single_adjustment_id, return_amt, updated_by }) {
   session.startTransaction();
 
   try {
+    // Records validated at parent level; no extra assertions needed.
     const single_adjustment = await StockAdjustmentProductModel.findById(
       single_adjustment_id
     ).session(session);
-
-    appAssert(
-      single_adjustment,
-      HTTP_STATUS.BAD_REQUEST,
-      "Selected adjustment Item not found!"
-    );
 
     let remaining_return = return_amt;
 
@@ -383,37 +369,41 @@ async function applyReturn({ single_adjustment_id, return_amt, updated_by }) {
       i >= 0 && remaining_return > 0;
       i--
     ) {
-      const batch = single_adjustment.batches[i];
+      const adjBatch = single_adjustment.batches[i];
 
-      if (remaining_return >= batch.quantity) {
-        // Subtract the quantity of the current batch from the remaining return amount.
-        remaining_return -= batch.quantity;
-
-        // Update batch quantity here
+      //2. If the remaining return is greater than or equal to the batch quantity,
+      // return the items to the batch and remove it from the adjustment as there is no longer a connection
+      if (remaining_return >= adjBatch.quantity) {
+        //2.1.1 return items to the batch
         await BatchModel.findByIdAndUpdate(
-          batch.batch,
+          adjBatch.batch,
           {
-            $inc: { quantity_in_stock: batch.quantity },
+            $inc: { quantity_in_stock: adjBatch.quantity },
           },
           { session }
         );
 
-        // Remove this batch, the items taken are returned back to the batch
+        //2.1.2 Subtract the quantity of the current batch from the remaining return amount.
+        remaining_return -= adjBatch.quantity;
+
+        //2.1.3 Remove the batch as the items have been fully returned
         single_adjustment.batches.splice(i, 1);
       } else {
-        // deduct stock adjustment quantity
-        batch.quantity -= remaining_return; //update the stock managment quantity
+        //2.2 If only a portion of the items from the batch are being returned, update the batch with the returned quantity
 
-        // Update batch quantity for partial deduction
+        //2.2.1 Update batch quantity for partial deduction
         await BatchModel.findByIdAndUpdate(
-          batch.batch,
+          adjBatch.batch,
           {
             $inc: { quantity_in_stock: remaining_return }, // return to the stock
           },
           { session }
         );
 
-        remaining_return = 0; // Deduction is done
+        // deduct stock adjustment quantity
+        adjBatch.quantity -= remaining_return; //update the stock managment quantity
+
+        remaining_return = 0; // Mark return as complete
       }
     }
 
@@ -433,7 +423,7 @@ async function applyReturn({ single_adjustment_id, return_amt, updated_by }) {
     return single_adjustment;
   } catch (error) {
     await session.abortTransaction(); // Rollback the transaction in case of error
-    throw new AppError(error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     session.endSession();
   }
@@ -449,49 +439,33 @@ const applyNewStockOut = async ({
   session.startTransaction(); // Begin the transaction
 
   try {
-    // Find the stock adjustment by ID within the session
+    // Records validated at parent level; no extra assertions needed.
     const single_adjustment = await StockAdjustmentProductModel.findById(
       single_adjustment_id
     ).session(session);
 
-    appAssert(
-      single_adjustment,
-      HTTP_STATUS.BAD_REQUEST,
-      "Selected adjustment Item not found!"
-    );
+    let affected_batches = [];
 
-    let new_adjustment_data = [];
-
-    // Retrieve batches with available stock and unexpired items, sorted by creation date (FIFO).
+    // Retrieve batches with available stock
     const batches_with_available_stock = await common.getStockAvailableBatches({
       location,
       product_id: single_adjustment.product,
+      session,
     });
 
-    let total_decreased = 0; // Tracks the total quantity decreased across multiple batches
+    let total_processed = 0; // Tracks the total quantity decreased across multiple batches
     for (const batch of batches_with_available_stock) {
-      // Stop processing if the required quantity has already been fulfilled
-      if (total_decreased >= additional_deduct_amount) {
-        break;
-      }
+      // Exit if the required quantity has already been fulfilled
+      if (total_processed >= additional_deduct_amount) break;
 
-      // Determine the quantity to deduct from this batch as the smaller value between
-      // the stock available in the batch and the remaining quantity needed to fulfill the order
+      // Determine the quantity to deduct from the batch (minimum of available stock in the batch or
+      // remaining unprocessed quantity)
       let qty_to_decrease_from_this_batch = Math.min(
         batch.quantity_in_stock,
-        additional_deduct_amount - total_decreased
+        additional_deduct_amount - total_processed
       );
 
-      //data for adding in stock adjustment
-      new_adjustment_data.push({
-        batch: batch._id,
-        quantity: qty_to_decrease_from_this_batch,
-      });
-
-      // Update the cumulative total quantity sold
-      total_decreased += qty_to_decrease_from_this_batch;
-
-      // Deduct the quantity sold from the batch’s available stock in the inventory
+      // Reduce stock quantity
       await BatchModel.findByIdAndUpdate(
         batch._id,
         {
@@ -499,19 +473,21 @@ const applyNewStockOut = async ({
         },
         { session }
       );
+
+      //data for adding in stock adjustment
+      affected_batches.push({
+        batch: batch._id,
+        quantity: qty_to_decrease_from_this_batch,
+      });
+
+      // Update the cumulative total quantity 
+      total_processed += qty_to_decrease_from_this_batch;
     }
 
-    await StockAdjustmentProductModel.findByIdAndUpdate(
-      single_adjustment_id,
-      {
-        $push: {
-          batches: {
-            $each: new_adjustment_data,
-          },
-        },
-      },
-      { session }
-    );
+    //save adjustment product
+    single_adjustment.batches.push(...affected_batches);
+    await single_adjustment.save({ session });
+
 
     //save updated by [general info]
     await StockAdjustmentModel.findByIdAndUpdate(
@@ -525,7 +501,7 @@ const applyNewStockOut = async ({
   } catch (error) {
     // If an error occurred, abort the transaction
     await session.abortTransaction();
-    throw Error(error.message);
+    throw new AppError(error.statusCode, error.message);
   } finally {
     // End the session
     session.endSession();
@@ -538,5 +514,5 @@ module.exports = {
   decreaseProductStocks,
   updateIncreaseAdjustment,
   applyReturn,
-  applyNewStockOut
+  applyNewStockOut,
 };

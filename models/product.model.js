@@ -13,6 +13,7 @@ const ProductSchema = mongoose.Schema(
       unique: true,
       sparse: true,
       trim: true,
+      set: (v) => (v?.trim() === "" ? undefined : v), // Remove 'sku' field if empty to avoid duplicate key errors on ''
     },
     image: String,
     shelf: {
@@ -39,10 +40,21 @@ const ProductSchema = mongoose.Schema(
       default: 2,
       min: 0,
     },
-    buying_price: Number,
-    selling_price: Number,
+    buying_price: {
+      type: Number,
+      validate: {
+        validator: (value) => value == null || value > 0, // optional but greater than 0 if provided
+        message: "Amount must be greater than 0 if provided.",
+      },
+    },
+    selling_price: {
+      type: Number,
+      validate: {
+        validator: (value) => value == null || value > 0, // optional but greater than 0 if provided
+        message: "Amount must be greater than 0 if provided.",
+      },
+    },
     does_expire: { type: Boolean, default: false },
-    last_batch_number: { type: Number, default: 0 },
     description: String,
     created_by: {
       type: mongoose.Schema.Types.ObjectId,

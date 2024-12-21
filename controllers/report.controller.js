@@ -1,5 +1,7 @@
 const TransactionProductModel = require("../models/transactionProduct.model");
 const mongoose = require("mongoose");
+const AppError = require("../utils/AppError");
+const HTTP_STATUS = require("../constants/http");
 
 const getStartAndEndDate = (type) => {
   let startDate;
@@ -57,7 +59,7 @@ const transactionReport = async (req, res) => {
 
     const { type } = req.query;
     if (!["d", "w", "m", "y"].includes(type)) {
-      throw Error("Invalid Transaction limit type");
+    throw new AppError(HTTP_STATUS.BAD_REQUEST, "Invalid Transaction limit type");
     }
 
     let report_type = "";
